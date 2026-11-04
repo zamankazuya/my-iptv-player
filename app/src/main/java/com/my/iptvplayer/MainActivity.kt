@@ -166,9 +166,11 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?, licenseUrl: String?) {
             val cleanUrl = url.trim()
-            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+            
+            // Reject invalid URLs or HTML block pages like <noscript>
+            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://") || cleanUrl.contains("<") || cleanUrl.contains(">")) {
                 runOnUiThread {
-                    val msg = "Invalid stream URL: $cleanUrl"
+                    val msg = "Blocked invalid URL or HTML response: $cleanUrl"
                     webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('$msg');", null)
                 }
                 return
@@ -181,7 +183,6 @@ class MainActivity : AppCompatActivity() {
                 player.stop()
                 player.clearMediaItems()
 
-                // Force TiviMate's exact client signature which Xtream panel whitelists
                 val ua = if (!userAgent.isNullOrBlank()) userAgent else "TiviMate/5.3.3 (Linux; Android 13)"
                 val headers = mutableMapOf<String, String>().apply {
                     put("User-Agent", ua)
@@ -198,10 +199,11 @@ class MainActivity : AppCompatActivity() {
                     .setConnectTimeoutMs(25000)
                     .setReadTimeoutMs(25000)
 
-                // Force HLS mime type so Xtream streams parse container chunks correctly
+                // Dynamically select MIME type based on stream format (.mpd vs .m3u8)
+                val isMpd = type.equals("mpd", ignoreCase = true) || cleanUrl.lowercase().contains(".mpd")
                 val mediaItemBuilder = MediaItem.Builder()
                     .setUri(Uri.parse(cleanUrl))
-                    .setMimeType(MimeTypes.APPLICATION_M3U8)
+                    .setMimeType(if (isMpd) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
 
                 if (!licenseUrl.isNullOrBlank() && licenseUrl.startsWith("http")) {
                     mediaItemBuilder.setDrmConfiguration(
