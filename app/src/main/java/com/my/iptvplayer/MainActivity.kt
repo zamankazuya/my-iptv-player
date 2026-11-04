@@ -166,6 +166,15 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?) {
+            val cleanUrl = url.trim()
+            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+                runOnUiThread {
+                    val msg = "Invalid stream URL or blocked page response: $cleanUrl"
+                    webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('$msg');", null)
+                }
+                return
+            }
+
             runOnUiThread {
                 val player = exoPlayer ?: return@runOnUiThread
                 player.stop()
@@ -180,9 +189,9 @@ class MainActivity : AppCompatActivity() {
                     .setDefaultRequestProperties(headers)
                     .setAllowCrossProtocolRedirects(true)
 
-                val isMpd = type.equals("mpd", ignoreCase = true) || url.lowercase().contains(".mpd")
+                val isMpd = type.equals("mpd", ignoreCase = true) || cleanUrl.lowercase().contains(".mpd")
                 val mediaItem = MediaItem.Builder()
-                    .setUri(Uri.parse(url))
+                    .setUri(Uri.parse(cleanUrl))
                     .setMimeType(if (isMpd) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
                     .build()
 
