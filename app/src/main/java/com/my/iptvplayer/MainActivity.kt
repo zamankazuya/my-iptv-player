@@ -174,30 +174,44 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
+            // Pull active cookies from WebView cookie manager so ExoPlayer shares session auth with server
+            val cookieValue = CookieManager.getInstance().getCookie(cleanUrl)
+
             runOnUiThread {
                 val player = exoPlayer ?: return@runOnUiThread
                 player.stop()
                 player.clearMediaItems()
 
                 val ua = if (!userAgent.isNullOrBlank()) userAgent else "TiviMate/5.3.3 (Linux; Android 13)"
-                val headers = mutableMapOf<String, String>()
-                if (!referer.isNullOrBlank()) headers["Referer"] = referer
+                val headers = mutableMapOf<String, String>().apply {
+                    put("User-Agent", ua)
+                    if (!referer.isNullOrBlank()) put("Referer", referer)
+                    if (!cookieValue.isNullOrBlank()) put("Cookie", cookieValue)
+                }
 
                 val dataSourceFactory = DefaultHttpDataSource.Factory()
                     .setUserAgent(ua)
                     .setDefaultRequestProperties(headers)
                     .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(20000)
+                    .setReadTimeoutMs(20000)
 
                 val isMpd = type.equals("mpd", ignoreCase = true) || cleanUrl.lowercase().contains(".mpd")
+                val isHls = type.equals("hls", ignoreCase = true) || cleanUrl.lowercase().contains(".m3u8")
+                
                 val mediaItemBuilder = MediaItem.Builder()
                     .setUri(Uri.parse(cleanUrl))
-                    .setMimeType(if (isMpd) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
+                    .setMimeType(when {
+                        isMpd -> MimeTypes.APPLICATION_MPD
+                        isHls -> MimeTypes.APPLICATION_M3U8
+                        else -> null
+                    })
 
                 if (!licenseUrl.isNullOrBlank() && licenseUrl.startsWith("http")) {
                     mediaItemBuilder.setDrmConfiguration(
                         MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
                             .setLicenseUri(licenseUrl)
-                            .setLicenseRequestHeaders(headers + mapOf("User-Agent" to ua))
+                            .setLicenseRequestHeaders(headers)
                             .build()
                     )
                 }
