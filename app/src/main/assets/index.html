@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IPTV Player</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+    html, body { background: transparent !important; color: #f5f5f7; overflow: hidden; height: 100dvh; width: 100vw; margin: 0; font-family: system-ui, sans-serif; }
+    .glass { background: rgba(18, 19, 26, 0.88); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.15); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="flex h-full w-full p-2 gap-2 bg-transparent">
+
+  <aside class="glass rounded-3xl w-64 h-full flex flex-col justify-between p-3 shrink-0 z-20">
+    <div class="space-y-2">
+      <div class="font-bold text-xs text-white pb-2 border-b border-white/10">IPTV Player <span class="text-[9px] text-emerald-400">NATIVE</span></div>
+      <input id="searchInput" type="text" placeholder="Search channel..." class="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-xs text-white" />
+      <div>
+        <label class="block text-[10px] text-white/50 mb-0.5">Category</label>
+        <select id="groupSelect" class="w-full px-2 py-1.5 rounded-xl bg-[#141824] border border-white/15 text-xs text-white"></select>
+      </div>
+    </div>
+    <div class="space-y-1.5 pt-2 border-t border-white/10">
+      <button id="btnOpenModal" class="w-full py-1.5 px-3 rounded-xl glass text-left text-xs font-semibold">📂 Load M3U</button>
+    </div>
+  </aside>
+
+  <main class="flex-1 flex flex-col gap-2 h-full overflow-hidden">
+    <section class="relative flex-1 rounded-3xl overflow-hidden bg-transparent border border-white/20 flex items-center justify-center">
+      <div id="loading" class="hidden absolute inset-0 bg-black/40 flex flex-col items-center justify-center z-10">
+        <div class="w-8 h-8 border-4 border-sky-400 border-t-transparent rounded-full animate-spin mb-1"></div>
+        <div class="text-xs text-white">Tuning...</div>
+      </div>
+      <div class="absolute top-2 left-2 glass px-3 py-1 rounded-xl text-xs font-bold text-white" id="nowPlaying">Select a Channel</div>
+    </section>
+    <section class="glass rounded-3xl p-2 h-28 shrink-0 flex flex-col justify-between">
+      <div id="channelGrid" class="flex items-center gap-2 overflow-x-auto no-scrollbar h-full"></div>
+    </section>
+  </main>
+
+  <div id="modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+    <div class="glass rounded-2xl max-w-md w-full p-4 space-y-3">
+      <h2 class="text-xs font-bold text-white">Load M3U URL</h2>
+      <input id="m3uUrl" type="url" placeholder="https://.../get.php" class="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-xs text-white" />
+      <div class="flex justify-end gap-2">
+        <button onclick="document.getElementById('modal').classList.add('hidden')" class="px-3 py-1 rounded-xl bg-white/10 text-xs">Cancel</button>
+        <button id="loadBtn" class="px-4 py-1 rounded-xl bg-sky-500 text-black font-bold text-xs">Load</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let channels = [
+      { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd' },
+      { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls' }
+    ];
+    let current = null;
+
+    window.onNativePlayerState = (s) => document.getElementById('loading').classList.toggle('hidden', s !== 'BUFFERING');
+    window.onNativePlayerError = (msg) => alert('Error: ' + msg);
+
+    function play(ch) {
+      current = ch;
+      document.getElementById('nowPlaying').textContent = ch.name;
+      if (window.AndroidBridge) {
+        window.AndroidBridge.playNativeStream(ch.url, ch.type, 'TiviMate/5.3.3', '');
+      }
+    }
+
+    function render() {
+      const grid = document.getElementById('channelGrid');
+      grid.innerHTML = '';
+      channels.forEach(ch => {
+        const btn = document.createElement('button');
+        btn.className = `glass rounded-xl p-2 w-40 shrink-0 text-left text-xs font-bold text-white truncate ${current?.id === ch.id ? 'border-sky-400' : ''}`;
+        btn.textContent = ch.name;
+        btn.onclick = () => play(ch);
+        grid.appendChild(btn);
+      });
+    }
+
+    document.getElementById('btnOpenModal').onclick = () => document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('loadBtn').onclick = async () => {
+      const u = document.getElementById('m3uUrl').value.trim();
+      if (!u) return;
+      const txt = window.AndroidBridge ? window.AndroidBridge.fetchRemoteText(u, 'TiviMate/5.3.3') : await (await fetch(u)).text();
+      parseM3U(txt);
+      document.getElementById('modal').classList.add('hidden');
+    };
+
+    function parseM3U(raw) {
+      const lines = raw.split(/\r?\n/);
+      let name = '';
+      const list = [];
+      lines.forEach(l => {
+        l = l.trim();
+        if (l.startsWith('#EXTINF:')) name = l.substring(l.lastIndexOf(',') + 1).trim();
+        else if (!l.startsWith('#') && l) {
+          list.push({ id: 'm-' + list.length, name: name || 'Channel', group: 'M3U', url: l, type: l.includes('.mpd') ? 'mpd' : 'hls' });
+          name = '';
+        }
+      });
+      if (list.length) { channels = list; render(); play(channels[0]); }
+    }
+
+    render();
+    play(channels[0]);
+  </script>
+</body>
+</html>
