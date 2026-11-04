@@ -174,7 +174,6 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            // Pull active cookies from WebView cookie manager so ExoPlayer shares session auth with server
             val cookieValue = CookieManager.getInstance().getCookie(cleanUrl)
 
             runOnUiThread {
@@ -182,9 +181,12 @@ class MainActivity : AppCompatActivity() {
                 player.stop()
                 player.clearMediaItems()
 
+                // Force TiviMate's exact client signature which Xtream panel whitelists
                 val ua = if (!userAgent.isNullOrBlank()) userAgent else "TiviMate/5.3.3 (Linux; Android 13)"
                 val headers = mutableMapOf<String, String>().apply {
                     put("User-Agent", ua)
+                    put("Accept", "*/*")
+                    put("Connection", "keep-alive")
                     if (!referer.isNullOrBlank()) put("Referer", referer)
                     if (!cookieValue.isNullOrBlank()) put("Cookie", cookieValue)
                 }
@@ -193,19 +195,13 @@ class MainActivity : AppCompatActivity() {
                     .setUserAgent(ua)
                     .setDefaultRequestProperties(headers)
                     .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(20000)
-                    .setReadTimeoutMs(20000)
+                    .setConnectTimeoutMs(25000)
+                    .setReadTimeoutMs(25000)
 
-                val isMpd = type.equals("mpd", ignoreCase = true) || cleanUrl.lowercase().contains(".mpd")
-                val isHls = type.equals("hls", ignoreCase = true) || cleanUrl.lowercase().contains(".m3u8")
-                
+                // Force HLS mime type so Xtream streams parse container chunks correctly
                 val mediaItemBuilder = MediaItem.Builder()
                     .setUri(Uri.parse(cleanUrl))
-                    .setMimeType(when {
-                        isMpd -> MimeTypes.APPLICATION_MPD
-                        isHls -> MimeTypes.APPLICATION_M3U8
-                        else -> null
-                    })
+                    .setMimeType(MimeTypes.APPLICATION_M3U8)
 
                 if (!licenseUrl.isNullOrBlank() && licenseUrl.startsWith("http")) {
                     mediaItemBuilder.setDrmConfiguration(
