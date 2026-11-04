@@ -18,6 +18,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -162,14 +163,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     inner class AndroidBridge(private val context: Context) {
-        private val prefs = context.getSharedPreferences("iptv_prefs", Context.MODE_PRIVATE)
-
         @JavascriptInterface
-        fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?) {
+        fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?, licenseUrl: String?) {
             val cleanUrl = url.trim()
             if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
                 runOnUiThread {
-                    val msg = "Invalid stream URL or blocked page response: $cleanUrl"
+                    val msg = "Invalid stream URL: $cleanUrl"
                     webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('$msg');", null)
                 }
                 return
@@ -190,12 +189,21 @@ class MainActivity : AppCompatActivity() {
                     .setAllowCrossProtocolRedirects(true)
 
                 val isMpd = type.equals("mpd", ignoreCase = true) || cleanUrl.lowercase().contains(".mpd")
-                val mediaItem = MediaItem.Builder()
+                val mediaItemBuilder = MediaItem.Builder()
                     .setUri(Uri.parse(cleanUrl))
                     .setMimeType(if (isMpd) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
-                    .build()
 
-                val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(mediaItem)
+                // Attach Widevine DRM configuration if an Astro license URL is provided
+                if (!licenseUrl.isNullOrBlank() && licenseUrl.startsWith("http")) {
+                    mediaItemBuilder.setDrmConfiguration(
+                        MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
+                            .setLicenseUri(licenseUrl)
+                            .setLicenseRequestHeaders(headers + mapOf("User-Agent" to ua))
+                            .build()
+                    )
+                }
+
+                val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(mediaItemBuilder.build())
                 player.setMediaSource(mediaSource)
                 player.prepare()
                 player.play()
