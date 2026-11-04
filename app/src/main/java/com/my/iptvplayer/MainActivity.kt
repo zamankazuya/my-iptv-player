@@ -193,7 +193,6 @@ class MainActivity : AppCompatActivity() {
                     .setUri(Uri.parse(cleanUrl))
                     .setMimeType(if (isMpd) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
 
-                // Attach Widevine DRM configuration if an Astro license URL is provided
                 if (!licenseUrl.isNullOrBlank() && licenseUrl.startsWith("http")) {
                     mediaItemBuilder.setDrmConfiguration(
                         MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
