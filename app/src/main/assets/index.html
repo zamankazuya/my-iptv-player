@@ -4,10 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Coolwalk IPTV — Native ExoPlayer</title>
-  <!-- vConsole Mobile Debugger CDN for on-screen network & console inspection -->
   <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
   <script>
-    // Initialize vConsole mobile developer panel
     var vConsole = new window.VConsole();
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -28,7 +26,7 @@
       <div class="flex items-center justify-between pb-2 border-b border-white/10">
         <div>
           <div class="font-bold text-xs text-white">Coolwalk IPTV <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">EXO</span></div>
-          <div id="activeUaBadge" class="text-[10px] text-sky-300 truncate max-w-[140px]">UA: TiviMate/5.3.3</div>
+          <div id="activeUaBadge" class="text-[10px] text-sky-300 truncate max-w-[140px]">UA: TiviMate/4.7.0</div>
         </div>
       </div>
 
@@ -51,23 +49,23 @@
     </div>
   </aside>
 
-  <!-- MAIN VIEW -->
-  <main class="flex-1 flex flex-col gap-2 h-full overflow-hidden">
-    <section id="videoOverlayContainer" class="relative flex-1 rounded-3xl overflow-hidden bg-transparent flex items-center justify-center cursor-pointer">
+  <!-- MAIN VIEW (Zero borders or outlines) -->
+  <main class="flex-1 flex flex-col gap-2 h-full overflow-hidden border-0 outline-none">
+    <section id="videoOverlayContainer" class="relative flex-1 overflow-hidden bg-transparent border-0 outline-none flex items-center justify-center cursor-pointer">
       <div id="loading" class="hidden absolute inset-0 bg-black/40 backdrop-blur-xs flex flex-col items-center justify-center z-10 pointer-events-none">
         <div class="w-8 h-8 border-4 border-sky-400 border-t-transparent rounded-full animate-spin mb-1"></div>
         <div id="loadingText" class="text-xs text-white font-semibold">Tuning Native ExoPlayer...</div>
       </div>
 
-      <!-- Top Bar -->
-      <div id="topBar" class="absolute top-0 inset-x-0 p-4 flex items-center justify-between bg-transparent z-10 transition-opacity duration-300">
+      <!-- Top Bar (Borderless & Auto-Hiding) -->
+      <div id="topBar" class="absolute top-0 inset-x-0 p-4 flex items-center justify-between bg-transparent border-0 outline-none z-10 transition-opacity duration-300">
         <div>
-          <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">Select a Channel</div>
-          <div id="nowPlayingEpg" class="text-[11px] text-sky-300 truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">Live EPG Ready</div>
+          <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Select a Channel</div>
+          <div id="nowPlayingEpg" class="text-[11px] text-sky-300 truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Live Stream Ready</div>
         </div>
         <div class="flex items-center gap-2">
-          <span id="drmBadge" class="hidden text-[9px] px-2 py-0.5 rounded bg-amber-500/25 text-amber-300 border border-amber-400/30 font-bold">DRM</span>
-          <button id="btnPlayPause" class="px-3.5 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 backdrop-blur text-white font-bold text-xs border border-white/20 shadow-lg">Pause</button>
+          <span id="drmBadge" class="hidden text-[9px] px-2 py-0.5 rounded bg-amber-500/25 text-amber-300 font-bold">DRM</span>
+          <button id="btnPlayPause" class="px-3.5 py-1.5 rounded-xl bg-black/50 hover:bg-black/70 text-white font-bold text-xs shadow-lg">Pause</button>
         </div>
       </div>
     </section>
@@ -98,9 +96,10 @@
     <div class="glass rounded-2xl max-w-md w-full p-4 space-y-3">
       <h2 class="text-xs font-bold text-white">Global User-Agent Spoofing</h2>
       <select id="uaPresetSelect" class="w-full px-3 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-        <option value="TiviMate/5.3.3 (Linux; Android 13)">TiviMate 5.3.3 (Android 13)</option>
-        <option value="OTT Navigator/1.7.5.1 (Linux; Android 13)">OTT Navigator 1.7.5.1 (Android 13)</option>
-        <option value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36">Standard Chrome Desktop</option>
+        <option value="TiviMate/4.7.0 (Linux; Android 13)">TiviMate/4.7.0 (Android 13)</option>
+        <option value="OTT Navigator/1.6.9.4 (Linux; Android 13)">OTT Navigator/1.6.9.4 (Android 13)</option>
+        <option value="TiviMate/5.1.0 (Linux; Android 14)">TiviMate/5.1.0 (Android 14)</option>
+        <option value="Dalvik/2.1.0 (Linux; U; Android 13; Shield Android TV Build/RQ1A.210105.003)">Android TV Dalvik (ExoPlayer)</option>
       </select>
       <div class="flex justify-end gap-2 pt-1">
         <button class="btnCloseModal px-3 py-1.5 rounded-xl bg-white/10 text-xs font-semibold">Cancel</button>
@@ -112,11 +111,11 @@
   <script>
     const state = {
       channels: [
-        { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: 'TiviMate/5.3.3', referer: '', licenseUrl: '', clearKey: '' },
-        { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: 'OTT Navigator/1.7.5.1', referer: '', licenseUrl: '', clearKey: '' }
+        { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: '', referer: '', licenseUrl: '', clearKey: '' },
+        { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: '', referer: '', licenseUrl: '', clearKey: '' }
       ],
       filtered: [], group: 'All', search: '', current: null,
-      globalUA: localStorage.getItem('tvos_ua') || 'TiviMate/5.3.3 (Linux; Android 13)',
+      globalUA: localStorage.getItem('tvos_ua') || 'TiviMate/4.7.0 (Linux; Android 13)',
       epgMap: {}
     };
 
@@ -128,7 +127,7 @@
       clearTimeout(hideUiTimer);
       hideUiTimer = setTimeout(() => {
         const modalOpen = !document.getElementById('modalM3u').classList.contains('hidden') || !document.getElementById('modalUA').classList.contains('hidden');
-        if (!modalOpen) { hideUi(); }
+        if (!modalOpen) hideUi();
       }, 3000);
     }
 
@@ -152,7 +151,7 @@
     };
     window.onNativePlayerError = (msg) => {
       document.getElementById('loading').classList.add('hidden');
-      console.error("Player Error: " + msg);
+      console.error("Player Error:", msg);
     };
 
     window.playChannel = (ch) => {
@@ -162,14 +161,14 @@
       document.getElementById('quickChannelSelect').value = ch.id;
       document.getElementById('nowPlayingTitle').textContent = ch.name;
       document.getElementById('drmBadge').classList.toggle('hidden', !ch.licenseUrl && !ch.clearKey);
-      
-      const isMpd = ch.type === 'mpd' || ch.url.toLowerCase().includes('.mpd');
       document.getElementById('loading').classList.remove('hidden');
+
+      console.log("Selected Channel Object:", JSON.stringify(ch));
 
       if (hasBridge()) {
         window.AndroidBridge.playNativeStream(
           ch.url,
-          isMpd ? 'mpd' : 'hls',
+          ch.type || 'auto',
           ch.userAgent || state.globalUA,
           ch.referer || '',
           ch.licenseUrl || '',
@@ -180,7 +179,10 @@
     };
 
     window.parseM3UAndLoad = (rawText, saveUrl = '') => {
-      if (!rawText || !rawText.includes('#EXTINF')) return;
+      if (!rawText || !rawText.includes('#EXTINF')) {
+        console.error("M3U load failed or empty text received. Length:", rawText ? rawText.length : 0);
+        return;
+      }
       const lines = rawText.split(/\r?\n/);
       const parsed = [];
       let currentMeta = null;
@@ -188,6 +190,8 @@
       let pendingReferer = '';
       let pendingLicense = '';
       let pendingClearKey = '';
+      let pendingLicenseType = '';
+      let pendingManifestType = '';
 
       for (let i = 0; i < lines.length; i++) {
         let line = lines[i].trim();
@@ -198,21 +202,57 @@
           const name = commaIdx !== -1 ? line.substring(commaIdx + 1).trim() : 'Channel';
           const groupMatch = line.match(/group-title="([^"]+)"/i);
           const idMatch = line.match(/tvg-id="([^"]+)"/i);
+          const uaAttr = line.match(/user-agent="([^"]+)"/i);
+          if (uaAttr) pendingUA = uaAttr[1];
           currentMeta = { name, group: groupMatch ? groupMatch[1] : 'Live TV', tvgId: idMatch ? idMatch[1] : '' };
-        } else if (line.startsWith('#EXTVLCOPT:http-user-agent=')) {
-          pendingUA = line.replace('#EXTVLCOPT:http-user-agent=', '').trim();
-        } else if (line.startsWith('#KODIPROP:inputstream.adaptive.license_key=')) {
-          const lKey = line.replace('#KODIPROP:inputstream.adaptive.license_key=', '').trim();
-          if (lKey.startsWith('http')) pendingLicense = lKey;
-          else if (lKey.includes(':')) pendingClearKey = lKey;
+        } else if (line.toLowerCase().startsWith('#extvlcopt:http-user-agent=')) {
+          pendingUA = line.substring(line.indexOf('=') + 1).trim();
+        } else if (line.toLowerCase().startsWith('#extvlcopt:http-referrer=') || line.toLowerCase().startsWith('#extvlcopt:http-referer=')) {
+          pendingReferer = line.substring(line.indexOf('=') + 1).trim();
+        } else if (line.toLowerCase().startsWith('#exthttp:')) {
+          try {
+            const j = JSON.parse(line.substring(9).trim());
+            if (j['User-Agent'] || j['user-agent']) pendingUA = j['User-Agent'] || j['user-agent'];
+            if (j['Referer'] || j['referer']) pendingReferer = j['Referer'] || j['referer'];
+          } catch (e) {}
+        } else if (line.toLowerCase().startsWith('#kodiprop:inputstream.adaptive.manifest_type=')) {
+          const mType = line.substring(line.indexOf('=') + 1).trim().toLowerCase();
+          if (mType.includes('mpd') || mType.includes('dash')) pendingManifestType = 'mpd';
+          else if (mType.includes('hls')) pendingManifestType = 'hls';
+        } else if (line.toLowerCase().startsWith('#kodiprop:inputstream.adaptive.license_type=')) {
+          pendingLicenseType = line.substring(line.indexOf('=') + 1).trim().toLowerCase();
+        } else if (line.toLowerCase().startsWith('#kodiprop:inputstream.adaptive.license_key=')) {
+          const lKey = line.substring(line.indexOf('=') + 1).trim();
+          const isClearKeyType = pendingLicenseType.includes('clearkey');
+          if (isClearKeyType || lKey.startsWith('{') || (!lKey.startsWith('http') && lKey.includes(':'))) {
+            pendingClearKey = lKey;
+          } else if (lKey.startsWith('http')) {
+            pendingLicense = lKey;
+          }
         } else if (!line.startsWith('#')) {
           let streamUrl = line;
           if (line.includes('|')) {
-            const [baseUrl, headerPart] = line.split('|');
-            streamUrl = baseUrl.trim();
-            const params = new URLSearchParams(headerPart);
-            if (params.get('User-Agent')) pendingUA = params.get('User-Agent');
-            if (params.get('Referer')) pendingReferer = params.get('Referer');
+            const pipeIdx = line.indexOf('|');
+            streamUrl = line.substring(0, pipeIdx).trim();
+            const headerPart = line.substring(pipeIdx + 1).trim();
+            // Case-insensitive pipe parameter parsing (matches TiviMate / OTT Navigator)
+            headerPart.split('&').forEach(pair => {
+              const eqIdx = pair.indexOf('=');
+              if (eqIdx !== -1) {
+                const k = pair.substring(0, eqIdx).trim().toLowerCase();
+                const v = decodeURIComponent(pair.substring(eqIdx + 1).trim());
+                if (k === 'user-agent') pendingUA = v;
+                else if (k === 'referer' || k === 'referrer' || k === 'origin') pendingReferer = v;
+              }
+            });
+          }
+
+          let streamType = pendingManifestType;
+          if (!streamType) {
+            const low = streamUrl.toLowerCase();
+            if (low.includes('.mpd')) streamType = 'mpd';
+            else if (low.includes('.m3u8')) streamType = 'hls';
+            else streamType = 'auto';
           }
 
           parsed.push({
@@ -221,7 +261,7 @@
             group: currentMeta ? currentMeta.group : 'Live TV',
             tvgId: currentMeta ? currentMeta.tvgId : '',
             url: streamUrl,
-            type: streamUrl.toLowerCase().includes('.mpd') ? 'mpd' : 'hls',
+            type: streamType,
             userAgent: pendingUA || state.globalUA,
             referer: pendingReferer,
             licenseUrl: pendingLicense,
@@ -233,10 +273,13 @@
           pendingReferer = '';
           pendingLicense = '';
           pendingClearKey = '';
+          pendingLicenseType = '';
+          pendingManifestType = '';
         }
       }
 
-      if (parsed.length > 0) {
+      if (parsed.length !== 0) {
+        console.log("Parsed M3U successfully. Total channels:", parsed.length);
         state.channels = parsed;
         state.group = 'All';
         if (saveUrl) localStorage.setItem('saved_m3u_url', saveUrl);
@@ -290,13 +333,23 @@
     document.getElementById('btnOpenModal').onclick = () => { document.getElementById('modalM3u').classList.remove('hidden'); showUi(); };
     document.getElementById('btnOpenUaModal').onclick = () => { document.getElementById('modalUA').classList.remove('hidden'); showUi(); };
     document.querySelectorAll('.btnCloseModal').forEach(b => b.onclick = () => document.querySelectorAll('#modalM3u,#modalUA').forEach(m => m.classList.add('hidden')));
-    
+
+    document.getElementById('btnSaveUaSettings').onclick = () => {
+      const val = document.getElementById('uaPresetSelect').value;
+      state.globalUA = val;
+      localStorage.setItem('tvos_ua', val);
+      document.getElementById('activeUaBadge').textContent = 'UA: ' + val.split(' ')[0];
+      document.getElementById('modalUA').classList.add('hidden');
+      if (state.current) window.playChannel(state.current);
+    };
+
     document.getElementById('btnFetchM3uUrl').onclick = async () => {
       const u = document.getElementById('m3uUrlInput').value.trim(); if (!u) return;
+      console.log("Fetching M3U from:", u);
       const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(u, state.globalUA) : await (await fetch(u)).text();
       window.parseM3UAndLoad(txt, u);
     };
-    
+
     document.getElementById('m3uFileInput').onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
       const r = new FileReader(); r.onload = (ev) => window.parseM3UAndLoad(ev.target.result); r.readAsText(f);
@@ -323,6 +376,7 @@
     };
 
     window.addEventListener('DOMContentLoaded', async () => {
+      document.getElementById('activeUaBadge').textContent = 'UA: ' + state.globalUA.split(' ')[0];
       const savedUrl = localStorage.getItem('saved_m3u_url');
       if (savedUrl) {
         document.getElementById('m3uUrlInput').value = savedUrl;
