@@ -4,6 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Coolwalk IPTV — Native ExoPlayer</title>
+  <!-- vConsole Mobile Debugger CDN for on-screen network & console inspection -->
+  <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
+  <script>
+    // Initialize vConsole mobile developer panel
+    var vConsole = new window.VConsole();
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
@@ -159,8 +165,6 @@
       
       const isMpd = ch.type === 'mpd' || ch.url.toLowerCase().includes('.mpd');
       document.getElementById('loading').classList.remove('hidden');
-
-      console.log("Playing channel:", ch.name, "URL:", ch.url);
 
       if (hasBridge()) {
         window.AndroidBridge.playNativeStream(
@@ -318,7 +322,6 @@
       }
     };
 
-    // Auto-reload saved playlist on startup if present in localStorage
     window.addEventListener('DOMContentLoaded', async () => {
       const savedUrl = localStorage.getItem('saved_m3u_url');
       if (savedUrl) {
