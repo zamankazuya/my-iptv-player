@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -63,7 +64,7 @@ class MainActivity : AppCompatActivity() {
 
         playerView = PlayerView(this).apply {
             useController = false
-            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            resizeMode = AspectRatioFrameLayout.ResizeMode.RESIZE_MODE_FIT
             setBackgroundColor(Color.BLACK)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -115,6 +116,7 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onPlayerError(error: PlaybackException) {
                         val msg = (error.cause?.message ?: error.message ?: "Stream error").replace("'", "")
+                        Log.e("ExoPlayerError", "Playback failed: $msg", error)
                         webView.post {
                             webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('$msg');", null)
                         }
@@ -167,11 +169,9 @@ class MainActivity : AppCompatActivity() {
         fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?, licenseUrl: String?) {
             val cleanUrl = url.trim()
             
-            // Reject invalid URLs or HTML block pages like <noscript>
-            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://") || cleanUrl.contains("<") || cleanUrl.contains(">")) {
+            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
                 runOnUiThread {
-                    val msg = "Blocked invalid URL or HTML response: $cleanUrl"
-                    webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('$msg');", null)
+                    webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('Invalid URL protocol');", null)
                 }
                 return
             }
@@ -199,7 +199,6 @@ class MainActivity : AppCompatActivity() {
                     .setConnectTimeoutMs(25000)
                     .setReadTimeoutMs(25000)
 
-                // Dynamically select MIME type based on stream format (.mpd vs .m3u8)
                 val isMpd = type.equals("mpd", ignoreCase = true) || cleanUrl.lowercase().contains(".mpd")
                 val mediaItemBuilder = MediaItem.Builder()
                     .setUri(Uri.parse(cleanUrl))
@@ -248,8 +247,14 @@ class MainActivity : AppCompatActivity() {
                     instanceFollowRedirects = true
                     setRequestProperty("User-Agent", userAgent ?: "TiviMate/5.3.3 (Linux; Android 13)")
                 }
+                val code = conn.responseCode
+                Log.d("IPTVFetch", "URL: $urlStr returned HTTP code: $code")
+                if (code >= 400) {
+                    return ""
+                }
                 conn.inputStream.bufferedReader().use { it.readText() }
             } catch (e: Exception) {
+                Log.e("IPTVFetch", "Error fetching URL: $urlStr", e)
                 ""
             }
         }
