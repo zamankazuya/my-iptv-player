@@ -28,6 +28,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
@@ -83,7 +84,11 @@ class MainActivity : AppCompatActivity() {
     )
 
     private var lastRequest: StreamRequest? = null
-    private var subtitleOverrideApplied: Boolean = false
+    private var tracksOverrideApplied: Boolean = false
+
+    // Modes: "ms_en" (Malay 1st, Eng 2nd), "en_ms" (Eng 1st, Malay 2nd), "ms", "en", "off" / "default"
+    private var preferredSubMode: String = "ms_en"
+    private var preferredAudioMode: String = "ms_en"
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -182,11 +187,11 @@ class MainActivity : AppCompatActivity() {
                 playerView.player = player
                 player.playWhenReady = true
 
-                // Prefer Malay 1st, English 2nd by default
                 player.trackSelectionParameters = player.trackSelectionParameters
                     .buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                     .setPreferredTextLanguages("ms", "may", "msa", "zsm", "en", "eng")
+                    .setPreferredAudioLanguages("ms", "may", "msa", "zsm", "en", "eng")
                     .setPreferredTextRoleFlags(C.ROLE_FLAG_SUBTITLE or C.ROLE_FLAG_CAPTION)
                     .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_FORCED)
                     .build()
@@ -205,7 +210,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     override fun onTracksChanged(tracks: Tracks) {
-                        applyPreferredSubtitles(player, tracks)
+                        applyPreferredTracks(player, tracks)
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
@@ -239,65 +244,115 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    private fun applyPreferredSubtitles(player: ExoPlayer, tracks: Tracks) {
-        var bestGroup: androidx.media3.common.TrackGroup? = null
-        var bestTrackIndex = -1
-        var bestPriority = 0 // 2 = Malay, 1 = English
-        var bestLabel = ""
+    private fun isMalayTrack(lang: String, label: String): Boolean {
+        return lang in listOf("ms", "may", "msa", "zsm") ||
+                lang.startsWith("ms-") ||
+                label.contains("malay") ||
+                label.contains("melayu") ||
+                label.contains("bahasa") ||
+                label == "bm"
+    }
+
+    private fun isEnglishTrack(lang: String, label: String): Boolean {
+        return lang in listOf("en", "eng") ||
+                lang.startsWith("en-") ||
+                label.contains("english") ||
+                label == "eng" ||
+                label == "en"
+    }
+
+    private fun scoreLanguage(mode: String, isMalay: Boolean, isEnglish: Boolean): Pair<Int, String> {
+        return when (mode) {
+            "ms_en" -> when {
+                isMalay -> 2 to "MALAY"
+                isEnglish -> 1 to "ENG"
+                else -> 0 to ""
+            }
+            "en_ms" -> when {
+                isEnglish -> 2 to "ENG"
+                isMalay -> 1 to "MALAY"
+                else -> 0 to ""
+            }
+            "ms" -> if (isMalay) 2 to "MALAY" else 0 to ""
+            "en" -> if (isEnglish) 2 to "ENG" else 0 to ""
+            else -> 0 to ""
+        }
+    }
+
+    private fun applyPreferredTracks(player: ExoPlayer, tracks: Tracks) {
+        if (tracks.groups.isEmpty()) return
+
+        var bestSubGroup: TrackGroup? = null
+        var bestSubIndex = -1
+        var bestSubScore = 0
+        var bestSubLabel = ""
+
+        var bestAudioGroup: TrackGroup? = null
+        var bestAudioIndex = -1
+        var bestAudioScore = 0
+        var bestAudioLabel = ""
 
         for (group in tracks.groups) {
-            if (group.type != C.TRACK_TYPE_TEXT) continue
             val mediaGroup = group.mediaTrackGroup
-            for (i in 0 until mediaGroup.length) {
-                if (!group.isTrackSupported(i)) continue
-                val format = mediaGroup.getFormat(i)
-                val lang = (format.language ?: "").lowercase(Locale.ROOT)
-                val label = (format.label ?: "").lowercase(Locale.ROOT)
-
-                val isMalay = lang in listOf("ms", "may", "msa", "zsm") ||
-                        lang.startsWith("ms-") ||
-                        label.contains("malay") ||
-                        label.contains("melayu") ||
-                        label.contains("bahasa") ||
-                        label == "bm"
-
-                val isEnglish = lang in listOf("en", "eng") ||
-                        lang.startsWith("en-") ||
-                        label.contains("english") ||
-                        label == "eng"
-
-                if (isMalay && bestPriority < 2) {
-                    bestPriority = 2
-                    bestGroup = mediaGroup
-                    bestTrackIndex = i
-                    bestLabel = "MALAY"
-                } else if (isEnglish && bestPriority < 1) {
-                    bestPriority = 1
-                    bestGroup = mediaGroup
-                    bestTrackIndex = i
-                    bestLabel = "ENG"
+            if (group.type == C.TRACK_TYPE_TEXT && preferredSubMode != "off") {
+                for (i in 0 until mediaGroup.length) {
+                    if (!group.isTrackSupported(i)) continue
+                    val fmt = mediaGroup.getFormat(i)
+                    val lang = (fmt.language ?: "").lowercase(Locale.ROOT)
+                    val label = (fmt.label ?: "").lowercase(Locale.ROOT)
+                    val (score, tag) = scoreLanguage(preferredSubMode, isMalayTrack(lang, label), isEnglishTrack(lang, label))
+                    if (score > bestSubScore) {
+                        bestSubScore = score
+                        bestSubGroup = mediaGroup
+                        bestSubIndex = i
+                        bestSubLabel = tag
+                    }
+                }
+            } else if (group.type == C.TRACK_TYPE_AUDIO && preferredAudioMode != "default") {
+                for (i in 0 until mediaGroup.length) {
+                    if (!group.isTrackSupported(i)) continue
+                    val fmt = mediaGroup.getFormat(i)
+                    val lang = (fmt.language ?: "").lowercase(Locale.ROOT)
+                    val label = (fmt.label ?: "").lowercase(Locale.ROOT)
+                    val (score, tag) = scoreLanguage(preferredAudioMode, isMalayTrack(lang, label), isEnglishTrack(lang, label))
+                    if (score > bestAudioScore) {
+                        bestAudioScore = score
+                        bestAudioGroup = mediaGroup
+                        bestAudioIndex = i
+                        bestAudioLabel = tag
+                    }
                 }
             }
         }
 
-        if (bestGroup != null && bestTrackIndex >= 0) {
-            if (!subtitleOverrideApplied) {
-                subtitleOverrideApplied = true
-                player.trackSelectionParameters = player.trackSelectionParameters
-                    .buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .addOverride(TrackSelectionOverride(bestGroup, bestTrackIndex))
-                    .build()
+        if (!tracksOverrideApplied) {
+            tracksOverrideApplied = true
+            val paramsBuilder = player.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+
+            if (preferredSubMode == "off") {
+                paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            } else {
+                paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                if (bestSubGroup != null && bestSubIndex >= 0) {
+                    paramsBuilder.addOverride(TrackSelectionOverride(bestSubGroup, bestSubIndex))
+                }
             }
-            val safeLabel = bestLabel
-            webView.post {
-                webView.evaluateJavascript("window.onSubtitleUpdated && window.onSubtitleUpdated('$safeLabel');", null)
+
+            if (preferredAudioMode != "default" && bestAudioGroup != null && bestAudioIndex >= 0) {
+                paramsBuilder.addOverride(TrackSelectionOverride(bestAudioGroup, bestAudioIndex))
             }
-        } else {
-            webView.post {
-                webView.evaluateJavascript("window.onSubtitleUpdated && window.onSubtitleUpdated('');", null)
-            }
+
+            player.trackSelectionParameters = paramsBuilder.build()
+        }
+
+        val finalSubBadge = if (preferredSubMode == "off") "" else bestSubLabel
+        val finalAudioBadge = if (preferredAudioMode == "default") "" else bestAudioLabel
+
+        webView.post {
+            webView.evaluateJavascript("window.onTrackBadgesUpdated && window.onTrackBadgesUpdated('$finalSubBadge', '$finalAudioBadge');", null)
         }
     }
 
@@ -545,7 +600,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startPlayback(req: StreamRequest) {
-        subtitleOverrideApplied = false
+        tracksOverrideApplied = false
         val cookieValue = CookieManager.getInstance().getCookie(req.url)
         val headers = mutableMapOf<String, String>().apply {
             put("User-Agent", req.userAgent)
@@ -582,11 +637,27 @@ class MainActivity : AppCompatActivity() {
                 player.stop()
                 player.clearMediaItems()
 
+                val subLangs = when (preferredSubMode) {
+                    "en_ms" -> arrayOf("en", "eng", "ms", "may", "msa", "zsm")
+                    "ms" -> arrayOf("ms", "may", "msa", "zsm")
+                    "en" -> arrayOf("en", "eng")
+                    else -> arrayOf("ms", "may", "msa", "zsm", "en", "eng")
+                }
+
+                val audLangs = when (preferredAudioMode) {
+                    "en_ms" -> arrayOf("en", "eng", "ms", "may", "msa", "zsm")
+                    "ms" -> arrayOf("ms", "may", "msa", "zsm")
+                    "en" -> arrayOf("en", "eng")
+                    else -> arrayOf("ms", "may", "msa", "zsm", "en", "eng")
+                }
+
                 player.trackSelectionParameters = player.trackSelectionParameters
                     .buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, preferredSubMode == "off")
                     .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .setPreferredTextLanguages("ms", "may", "msa", "zsm", "en", "eng")
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                    .setPreferredTextLanguages(*subLangs)
+                    .setPreferredAudioLanguages(*audLangs)
                     .build()
 
                 val dataSourceFactory = DefaultHttpDataSource.Factory()
@@ -675,6 +746,18 @@ class MainActivity : AppCompatActivity() {
             val req = StreamRequest(cleanUrl, initialFormat, ua, ref, lic, ck, 0)
             lastRequest = req
             startPlayback(req)
+        }
+
+        @JavascriptInterface
+        fun setLanguagePreferences(subMode: String?, audioMode: String?) {
+            preferredSubMode = if (!subMode.isNullOrBlank()) subMode.trim() else "ms_en"
+            preferredAudioMode = if (!audioMode.isNullOrBlank()) audioMode.trim() else "ms_en"
+            runOnUiThread {
+                exoPlayer?.let { player ->
+                    tracksOverrideApplied = false
+                    applyPreferredTracks(player, player.currentTracks)
+                }
+            }
         }
 
         @JavascriptInterface
