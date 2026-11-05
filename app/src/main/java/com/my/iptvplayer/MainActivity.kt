@@ -58,6 +58,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
 
+    private data class StreamRequest(
+        val url: String,
+        val format: String,
+        val userAgent: String,
+        val referer: String,
+        val licenseUrl: String,
+        val clearKey: String,
+        val fallbackAttempt: Int = 0
+    )
+
+    private var lastRequest: StreamRequest? = null
+
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -70,10 +82,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // 1. Trust all self-signed IPTV panel SSL certificates (like Sparkle TV / TiviMate)
         trustAllCertificates()
-
-        // 2. Persist session cookies across 302 redirects (critical for PHP IPTV panels)
         CookieHandler.setDefault(java.net.CookieManager(null, CookiePolicy.ACCEPT_ALL))
 
         val root = FrameLayout(this).apply {
@@ -142,7 +151,6 @@ class MainActivity : AppCompatActivity() {
             .setBufferDurationsMs(15000, 50000, 1000, 2500)
             .build()
 
-        // Enable decoder fallback like TiviMate/Sparkle TV for tricky H.264/HEVC profiles
         val renderersFactory = DefaultRenderersFactory(this)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
@@ -161,7 +169,7 @@ class MainActivity : AppCompatActivity() {
                             Player.STATE_ENDED -> "ENDED"
                             else -> "IDLE"
                         }
-                        logToJs("Player State -> $jsState")
+                        logToJs("Player State: $jsState")
                         webView.post {
                             webView.evaluateJavascript("window.onNativePlayerState && window.onNativePlayerState('$jsState');", null)
                         }
@@ -170,7 +178,27 @@ class MainActivity : AppCompatActivity() {
                     override fun onPlayerError(error: PlaybackException) {
                         val causeMsg = error.cause?.message ?: error.message ?: "Unknown error"
                         val fullMsg = "${error.errorCodeName}: $causeMsg"
-                        logToJs("ExoPlayer Error -> $fullMsg", isError = true)
+                        logToJs("ExoPlayer Error: $fullMsg", isError = true)
+
+                        // Automatic container fallback like TiviMate / Sparkle TV
+                        val req = lastRequest
+                        val isFormatError = error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
+
+                        if (req != null && isFormatError && req.fallbackAttempt == 0) {
+                            val nextFormat = when (req.format) {
+                                "hls" -> "mpd"
+                                "mpd" -> "raw"
+                                else -> "hls"
+                            }
+                            logToJs("Retrying stream with fallback format: $nextFormat")
+                            val retryReq = req.copy(format = nextFormat, fallbackAttempt = 1)
+                            lastRequest = retryReq
+                            startPlayback(retryReq)
+                            return
+                        }
+
                         val safe = fullMsg.replace("'", "").replace("\n", " ")
                         webView.post {
                             webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('$safe');", null)
@@ -221,8 +249,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun hexToBase64Url(hex: String): String {
         val clean = hex.trim().replace("-", "")
-        if (clean.length % 2 != 0 || !clean.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) {
-            // Already Base64 or Base64Url
+        val isHex = clean.length % 2 == 0 && clean.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }
+        if (!isHex) {
             return clean.replace("+", "-").replace("/", "_").replace("=", "")
         }
         val bytes = ByteArray(clean.length / 2)
@@ -235,7 +263,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildClearKeyJson(rawClearKey: String): ByteArray {
         val trimmed = rawClearKey.trim()
-        // If the M3U or remote key server already provided valid JSON {"keys":[...]}
         if (trimmed.startsWith("{") && trimmed.contains("\"keys\"")) {
             return trimmed.toByteArray(Charsets.UTF_8)
         }
@@ -249,61 +276,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val json = """{"keys":[${keysArray.joinToString(",")}],"type":"temporary"}"""
-        logToJs("Built ClearKey JSON: $json")
+        logToJs("ClearKey JSON ready: $json")
         return json.toByteArray(Charsets.UTF_8)
-    }
-
-    private data class ResolvedStream(
-        val finalUrl: String,
-        val detectedType: String,
-        val statusCode: Int
-    )
-
-    // Pre-flight resolver: follows HTTP<->HTTPS redirects and checks Content-Type / first bytes
-    private fun resolveStreamUrl(urlStr: String, headers: Map<String, String>, hintType: String): ResolvedStream {
-        var currentUrl = urlStr
-        var status = 0
-        var contentType = ""
-        var firstChunk = ""
-        try {
-            for (hop in 0 until 5) {
-                val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    instanceFollowRedirects = false
-                    connectTimeout = 10000
-                    readTimeout = 10000
-                    headers.forEach { (k, v) -> setRequestProperty(k, v) }
-                }
-                status = conn.responseCode
-                if (status in listOf(301, 302, 303, 307, 308)) {
-                    val loc = conn.getHeaderField("Location") ?: break
-                    currentUrl = URL(URL(currentUrl), loc).toString()
-                    logToJs("Redirect ($status) -> $currentUrl")
-                    conn.disconnect()
-                    continue
-                }
-                contentType = (conn.contentType ?: "").lowercase()
-                if (status in 200..299) {
-                    val buf = ByteArray(256)
-                    val read = conn.inputStream.read(buf)
-                    if (read > 0) {
-                        firstChunk = String(buf, 0, read, Charsets.UTF_8).trim()
-                    }
-                }
-                conn.disconnect()
-                break
-            }
-        } catch (e: Exception) {
-            logToJs("Pre-flight probe note: ${e.message}")
-        }
-
-        val lowerUrl = currentUrl.lowercase()
-        val detected = when {
-            hintType.equals("mpd", true) || lowerUrl.contains(".mpd") || contentType.contains("dash+xml") || firstChunk.contains("<MPD") -> "mpd"
-            hintType.equals("hls", true) || lowerUrl.contains(".m3u8") || contentType.contains("mpegurl") || firstChunk.startsWith("#EXTM3U") -> "hls"
-            else -> "auto"
-        }
-        return ResolvedStream(currentUrl, detected, status)
     }
 
     private fun fetchUrlTextWithHeaders(urlStr: String, headers: Map<String, String>): String {
@@ -316,12 +290,109 @@ class MainActivity : AppCompatActivity() {
                 headers.forEach { (k, v) -> setRequestProperty(k, v) }
             }
             val code = conn.responseCode
-            logToJs("Fetch [$code] $urlStr")
-            if (code >= 400) return ""
+            logToJs("HTTP Fetch [$code] -> $urlStr")
+            if (code !in 200..399) return ""
             conn.inputStream.bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            logToJs("Fetch failed: ${e.message}", isError = true)
+            logToJs("HTTP Fetch error: ${e.message}", isError = true)
             ""
+        }
+    }
+
+    private fun startPlayback(req: StreamRequest) {
+        val cookieValue = CookieManager.getInstance().getCookie(req.url)
+        val headers = mutableMapOf<String, String>().apply {
+            put("User-Agent", req.userAgent)
+            put("Accept", "*/*")
+            put("Connection", "keep-alive")
+            if (req.referer.isNotEmpty()) {
+                put("Referer", req.referer)
+                try {
+                    val u = URL(req.referer)
+                    if (!u.authority.isNullOrEmpty()) {
+                        put("Origin", "${u.protocol}://${u.authority}")
+                    }
+                } catch (_: Exception) {}
+            }
+            if (!cookieValue.isNullOrBlank()) put("Cookie", cookieValue)
+        }
+
+        thread {
+            var resolvedClearKey = req.clearKey
+            var clearKeyHttpUrl = ""
+
+            if (resolvedClearKey.startsWith("http://") || resolvedClearKey.startsWith("https://")) {
+                val cleanCkUrl = resolvedClearKey.split("|")[0].trim()
+                val body = fetchUrlTextWithHeaders(cleanCkUrl, headers).trim()
+                if (body.startsWith("{") || body.contains(":")) {
+                    resolvedClearKey = body
+                    logToJs("Loaded remote ClearKey: $body")
+                } else {
+                    clearKeyHttpUrl = cleanCkUrl
+                }
+            }
+
+            runOnUiThread {
+                val player = exoPlayer ?: return@runOnUiThread
+                player.stop()
+                player.clearMediaItems()
+
+                val dataSourceFactory = DefaultHttpDataSource.Factory()
+                    .setUserAgent(req.userAgent)
+                    .setDefaultRequestProperties(headers)
+                    .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(25000)
+                    .setReadTimeoutMs(25000)
+
+                val mediaItemBuilder = MediaItem.Builder()
+                    .setUri(Uri.parse(req.url))
+
+                when (req.format) {
+                    "mpd" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+                    "hls" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+                    // "raw" / "auto" leaves MimeType unset for native .ts or progressive detection
+                }
+
+                val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+
+                if (clearKeyHttpUrl.isNotEmpty()) {
+                    val drmCallback = HttpMediaDrmCallback(clearKeyHttpUrl, dataSourceFactory)
+                    headers.forEach { (k, v) -> drmCallback.setKeyRequestProperty(k, v) }
+                    val drmSessionManager = DefaultDrmSessionManager.Builder()
+                        .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+                        .setMultiSession(true)
+                        .setPlayClearSamplesWithoutKeys(true)
+                        .build(drmCallback)
+                    mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
+                } else if (resolvedClearKey.isNotEmpty() && (resolvedClearKey.contains(":") || resolvedClearKey.startsWith("{"))) {
+                    try {
+                        val clearKeyBytes = buildClearKeyJson(resolvedClearKey)
+                        val drmCallback = LocalMediaDrmCallback(clearKeyBytes)
+                        val drmSessionManager = DefaultDrmSessionManager.Builder()
+                            .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+                            .setMultiSession(true)
+                            .setPlayClearSamplesWithoutKeys(true)
+                            .build(drmCallback)
+                        mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
+                    } catch (e: Exception) {
+                        logToJs("ClearKey error: ${e.message}", isError = true)
+                    }
+                } else if (req.licenseUrl.startsWith("http")) {
+                    val cleanLicUrl = req.licenseUrl.split("|")[0].trim()
+                    mediaItemBuilder.setDrmConfiguration(
+                        MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
+                            .setLicenseUri(cleanLicUrl)
+                            .setLicenseRequestHeaders(headers)
+                            .setMultiSession(true)
+                            .build()
+                    )
+                }
+
+                val mediaSource = mediaSourceFactory.createMediaSource(mediaItemBuilder.build())
+                player.setMediaSource(mediaSource)
+                player.prepare()
+                player.play()
+            }
         }
     }
 
@@ -337,111 +408,27 @@ class MainActivity : AppCompatActivity() {
         ) {
             val cleanUrl = url.trim()
             if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-                logToJs("Blocked invalid URL: $cleanUrl", isError = true)
+                logToJs("Invalid URL: $cleanUrl", isError = true)
                 return
             }
 
             val ua = if (!userAgent.isNullOrBlank()) userAgent.trim() else "TiviMate/4.7.0 (Linux; Android 13)"
-            val cookieValue = CookieManager.getInstance().getCookie(cleanUrl)
+            val ref = referer?.trim() ?: ""
+            val lic = licenseUrl?.trim() ?: ""
+            val ck = clearKey?.trim() ?: ""
 
-            val headers = mutableMapOf<String, String>().apply {
-                put("User-Agent", ua)
-                put("Accept", "*/*")
-                put("Connection", "keep-alive")
-                if (!referer.isNullOrBlank()) {
-                    put("Referer", referer.trim())
-                    try {
-                        val u = URL(referer.trim())
-                        put("Origin", "${u.protocol}://${u.Authority}")
-                    } catch (_: Exception) {}
-                }
-                if (!cookieValue.isNullOrBlank()) put("Cookie", cookieValue)
+            val lowerUrl = cleanUrl.lowercase()
+            val initialFormat = when {
+                type.equals("mpd", true) || lowerUrl.contains(".mpd") || ck.isNotEmpty() || lic.isNotEmpty() -> "mpd"
+                type.equals("hls", true) || lowerUrl.contains(".m3u8") -> "hls"
+                else -> "raw"
             }
 
-            logToJs("Tuning URL: $cleanUrl | HintType: $type | UA: $ua | ClearKey: ${!clearKey.isNullOrBlank()} | LicenseUrl: ${!licenseUrl.isNullOrBlank()}")
+            logToJs("Tuning: $cleanUrl | Format: $initialFormat | UA: $ua | ClearKey: ${ck.isNotEmpty()} | Widevine: ${lic.isNotEmpty()}")
 
-            thread {
-                // 1. Resolve redirects & actual manifest type (MPD vs HLS vs raw TS)
-                val resolved = resolveStreamUrl(cleanUrl, headers, type)
-                logToJs("Resolved -> Type: ${resolved.detectedType} | Status: ${resolved.statusCode} | FinalURL: ${resolved.finalUrl}")
-
-                // 2. If ClearKey is a remote URL (common on Astro PHP panels), try fetching the ClearKey JSON first
-                var resolvedClearKey = clearKey?.trim() ?: ""
-                var clearKeyHttpUrl = ""
-                if (resolvedClearKey.startsWith("http://") || resolvedClearKey.startsWith("https://")) {
-                    val cleanCkUrl = resolvedClearKey.split("|")[0].trim()
-                    val body = fetchUrlTextWithHeaders(cleanCkUrl, headers).trim()
-                    if (body.startsWith("{") || body.contains(":")) {
-                        resolvedClearKey = body
-                        logToJs("Fetched remote ClearKey payload: $body")
-                    } else {
-                        clearKeyHttpUrl = cleanCkUrl
-                    }
-                }
-
-                runOnUiThread {
-                    val player = exoPlayer ?: return@runOnUiThread
-                    player.stop()
-                    player.clearMediaItems()
-
-                    val dataSourceFactory = DefaultHttpDataSource.Factory()
-                        .setUserAgent(ua)
-                        .setDefaultRequestProperties(headers)
-                        .setAllowCrossProtocolRedirects(true)
-                        .setConnectTimeoutMs(25000)
-                        .setReadTimeoutMs(25000)
-
-                    val mediaItemBuilder = MediaItem.Builder()
-                        .setUri(Uri.parse(resolved.finalUrl))
-
-                    when (resolved.detectedType) {
-                        "mpd" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-                        "hls" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-                        // "auto" leaves MimeType unset so ExoPlayer handles raw .ts or progressive streams natively
-                    }
-
-                    val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
-
-                    // 3. Configure Multi-Session ClearKey or Widevine DRM
-                    if (clearKeyHttpUrl.isNotEmpty()) {
-                        val drmCallback = HttpMediaDrmCallback(clearKeyHttpUrl, dataSourceFactory)
-                        headers.forEach { (k, v) -> drmCallback.setKeyRequestProperty(k, v) }
-                        val drmSessionManager = DefaultDrmSessionManager.Builder()
-                            .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
-                            .setMultiSession(true)
-                            .setPlayClearSamplesWithoutKeys(true)
-                            .build(drmCallback)
-                        mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
-                    } else if (resolvedClearKey.isNotEmpty() && (resolvedClearKey.contains(":") || resolvedClearKey.startsWith("{"))) {
-                        try {
-                            val clearKeyBytes = buildClearKeyJson(resolvedClearKey)
-                            val drmCallback = LocalMediaDrmCallback(clearKeyBytes)
-                            val drmSessionManager = DefaultDrmSessionManager.Builder()
-                                .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
-                                .setMultiSession(true)
-                                .setPlayClearSamplesWithoutKeys(true)
-                                .build(drmCallback)
-                            mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
-                        } catch (e: Exception) {
-                            logToJs("ClearKey parse error: ${e.message}", isError = true)
-                        }
-                    } else if (!licenseUrl.isNullOrBlank() && licenseUrl.startsWith("http")) {
-                        val cleanLicUrl = licenseUrl.split("|")[0].trim()
-                        mediaItemBuilder.setDrmConfiguration(
-                            MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
-                                .setLicenseUri(cleanLicUrl)
-                                .setLicenseRequestHeaders(headers)
-                                .setMultiSession(true)
-                                .build()
-                        )
-                    }
-
-                    val mediaSource = mediaSourceFactory.createMediaSource(mediaItemBuilder.build())
-                    player.setMediaSource(mediaSource)
-                    player.prepare()
-                    player.play()
-                }
-            }
+            val req = StreamRequest(cleanUrl, initialFormat, ua, ref, lic, ck, 0)
+            lastRequest = req
+            startPlayback(req)
         }
 
         @JavascriptInterface
