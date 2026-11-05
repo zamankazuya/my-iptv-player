@@ -31,6 +31,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -72,6 +73,7 @@ class MainActivity : AppCompatActivity() {
     private var exoPlayer: ExoPlayer? = null
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    private var isPickingFile: Boolean = false
 
     private data class StreamRequest(
         val url: String,
@@ -86,13 +88,16 @@ class MainActivity : AppCompatActivity() {
     private var lastRequest: StreamRequest? = null
     private var tracksOverrideApplied: Boolean = false
 
-    // Modes: "ms_en" (Malay 1st, Eng 2nd), "en_ms" (Eng 1st, Malay 2nd), "ms", "en", "off" / "default"
+    // Global Player Preferences
     private var preferredSubMode: String = "ms_en"
     private var preferredAudioMode: String = "ms_en"
+    private var maxVideoHeight: Int = 0 // 0 = Auto, 1080, 720, 480, 360
+    private var bgAudioPlayOnExit: Boolean = false
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        isPickingFile = false
         val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
         fileUploadCallback?.onReceiveValue(uris)
         fileUploadCallback = null
@@ -155,6 +160,18 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (!isPickingFile && !isChangingConfigurations) {
+            if (!bgAudioPlayOnExit) {
+                exoPlayer?.stop()
+                exoPlayer?.release()
+                exoPlayer = null
+                finishAndRemoveTask()
+            }
+        }
+    }
+
     private fun trustAllCertificates() {
         try {
             val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
@@ -211,6 +228,14 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onTracksChanged(tracks: Tracks) {
                         applyPreferredTracks(player, tracks)
+                    }
+
+                    override fun onVideoSizeChanged(videoSize: VideoSize) {
+                        val h = videoSize.height
+                        val label = if (h > 0) "${h}p" else ""
+                        webView.post {
+                            webView.evaluateJavascript("window.onVideoResolutionChanged && window.onVideoResolutionChanged('$label');", null)
+                        }
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
@@ -332,6 +357,12 @@ class MainActivity : AppCompatActivity() {
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
 
+            if (maxVideoHeight > 0) {
+                paramsBuilder.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
+            } else {
+                paramsBuilder.clearVideoSizeConstraints()
+            }
+
             if (preferredSubMode == "off") {
                 paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             } else {
@@ -384,10 +415,12 @@ class MainActivity : AppCompatActivity() {
                 return try {
                     val intent = fileChooserParams?.createIntent()
                     if (intent != null) {
+                        isPickingFile = true
                         filePickerLauncher.launch(intent)
                         true
                     } else false
                 } catch (e: Exception) {
+                    isPickingFile = false
                     fileUploadCallback = null
                     false
                 }
@@ -651,14 +684,21 @@ class MainActivity : AppCompatActivity() {
                     else -> arrayOf("ms", "may", "msa", "zsm", "en", "eng")
                 }
 
-                player.trackSelectionParameters = player.trackSelectionParameters
+                val paramBuilder = player.trackSelectionParameters
                     .buildUpon()
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, preferredSubMode == "off")
                     .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                     .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
                     .setPreferredTextLanguages(*subLangs)
                     .setPreferredAudioLanguages(*audLangs)
-                    .build()
+
+                if (maxVideoHeight > 0) {
+                    paramBuilder.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
+                } else {
+                    paramBuilder.clearVideoSizeConstraints()
+                }
+
+                player.trackSelectionParameters = paramBuilder.build()
 
                 val dataSourceFactory = DefaultHttpDataSource.Factory()
                     .setUserAgent(req.userAgent)
@@ -756,6 +796,27 @@ class MainActivity : AppCompatActivity() {
                 exoPlayer?.let { player ->
                     tracksOverrideApplied = false
                     applyPreferredTracks(player, player.currentTracks)
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun setPlayerOptions(resHeight: Int, bgAudio: Boolean, fontScalePercent: Int) {
+            maxVideoHeight = resHeight
+            bgAudioPlayOnExit = bgAudio
+            val clampedScale = fontScalePercent.coerceIn(80, 140)
+            val spSize = 18f * (clampedScale / 100f)
+
+            runOnUiThread {
+                playerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, spSize)
+                exoPlayer?.let { player ->
+                    val b = player.trackSelectionParameters.buildUpon()
+                    if (maxVideoHeight > 0) {
+                        b.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
+                    } else {
+                        b.clearVideoSizeConstraints()
+                    }
+                    player.trackSelectionParameters = b.build()
                 }
             }
         }
