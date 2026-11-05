@@ -3,10 +3,13 @@ package com.my.iptvplayer
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
+import android.util.TypedValue
+import android.util.Xml
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -25,6 +28,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -36,14 +41,23 @@ import androidx.media3.exoplayer.drm.HttpMediaDrmCallback
 import androidx.media3.exoplayer.drm.LocalMediaDrmCallback
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import org.json.JSONObject
+import org.xmlpull.v1.XmlPullParser
+import java.io.InputStream
+import java.io.PushbackInputStream
 import java.net.CookieHandler
 import java.net.CookiePolicy
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.zip.GZIPInputStream
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -69,6 +83,7 @@ class MainActivity : AppCompatActivity() {
     )
 
     private var lastRequest: StreamRequest? = null
+    private var subtitleOverrideApplied: Boolean = false
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -102,6 +117,20 @@ class MainActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 Gravity.CENTER
             )
+            subtitleView?.apply {
+                setStyle(
+                    CaptionStyleCompat(
+                        Color.WHITE,
+                        Color.TRANSPARENT,
+                        Color.TRANSPARENT,
+                        CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
+                        Color.BLACK,
+                        Typeface.DEFAULT_BOLD
+                    )
+                )
+                setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                setBottomPaddingFraction(0.08f)
+            }
         }
 
         webView = WebView(this).apply {
@@ -137,15 +166,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun logToJs(msg: String, isError: Boolean = false) {
-        Log.d("IPTV_Native", msg)
-        val safeMsg = JSONObject.quote("[Native] $msg")
-        val fn = if (isError) "console.error" else "console.log"
-        webView.post {
-            webView.evaluateJavascript("$fn($safeMsg);", null)
-        }
-    }
-
     private fun initExoPlayer() {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15000, 50000, 1000, 2500)
@@ -161,6 +181,16 @@ class MainActivity : AppCompatActivity() {
             .also { player ->
                 playerView.player = player
                 player.playWhenReady = true
+
+                // Prefer Malay 1st, English 2nd by default
+                player.trackSelectionParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setPreferredTextLanguages("ms", "may", "msa", "zsm", "en", "eng")
+                    .setPreferredTextRoleFlags(C.ROLE_FLAG_SUBTITLE or C.ROLE_FLAG_CAPTION)
+                    .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_FORCED)
+                    .build()
+
                 player.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         val jsState = when (state) {
@@ -169,18 +199,20 @@ class MainActivity : AppCompatActivity() {
                             Player.STATE_ENDED -> "ENDED"
                             else -> "IDLE"
                         }
-                        logToJs("Player State: $jsState")
                         webView.post {
                             webView.evaluateJavascript("window.onNativePlayerState && window.onNativePlayerState('$jsState');", null)
                         }
                     }
 
+                    override fun onTracksChanged(tracks: Tracks) {
+                        applyPreferredSubtitles(player, tracks)
+                    }
+
                     override fun onPlayerError(error: PlaybackException) {
                         val causeMsg = error.cause?.message ?: error.message ?: "Unknown error"
                         val fullMsg = "${error.errorCodeName}: $causeMsg"
-                        logToJs("ExoPlayer Error: $fullMsg", isError = true)
+                        Log.e("IPTV_Native", "ExoPlayer Error: $fullMsg")
 
-                        // Automatic container fallback like TiviMate / Sparkle TV
                         val req = lastRequest
                         val isFormatError = error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
                                 error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
@@ -192,7 +224,6 @@ class MainActivity : AppCompatActivity() {
                                 "mpd" -> "raw"
                                 else -> "hls"
                             }
-                            logToJs("Retrying stream with fallback format: $nextFormat")
                             val retryReq = req.copy(format = nextFormat, fallbackAttempt = 1)
                             lastRequest = retryReq
                             startPlayback(retryReq)
@@ -206,6 +237,68 @@ class MainActivity : AppCompatActivity() {
                     }
                 })
             }
+    }
+
+    private fun applyPreferredSubtitles(player: ExoPlayer, tracks: Tracks) {
+        var bestGroup: androidx.media3.common.TrackGroup? = null
+        var bestTrackIndex = -1
+        var bestPriority = 0 // 2 = Malay, 1 = English
+        var bestLabel = ""
+
+        for (group in tracks.groups) {
+            if (group.type != C.TRACK_TYPE_TEXT) continue
+            val mediaGroup = group.mediaTrackGroup
+            for (i in 0 until mediaGroup.length) {
+                if (!group.isTrackSupported(i)) continue
+                val format = mediaGroup.getFormat(i)
+                val lang = (format.language ?: "").lowercase(Locale.ROOT)
+                val label = (format.label ?: "").lowercase(Locale.ROOT)
+
+                val isMalay = lang in listOf("ms", "may", "msa", "zsm") ||
+                        lang.startsWith("ms-") ||
+                        label.contains("malay") ||
+                        label.contains("melayu") ||
+                        label.contains("bahasa") ||
+                        label == "bm"
+
+                val isEnglish = lang in listOf("en", "eng") ||
+                        lang.startsWith("en-") ||
+                        label.contains("english") ||
+                        label == "eng"
+
+                if (isMalay && bestPriority < 2) {
+                    bestPriority = 2
+                    bestGroup = mediaGroup
+                    bestTrackIndex = i
+                    bestLabel = "MALAY"
+                } else if (isEnglish && bestPriority < 1) {
+                    bestPriority = 1
+                    bestGroup = mediaGroup
+                    bestTrackIndex = i
+                    bestLabel = "ENG"
+                }
+            }
+        }
+
+        if (bestGroup != null && bestTrackIndex >= 0) {
+            if (!subtitleOverrideApplied) {
+                subtitleOverrideApplied = true
+                player.trackSelectionParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .addOverride(TrackSelectionOverride(bestGroup, bestTrackIndex))
+                    .build()
+            }
+            val safeLabel = bestLabel
+            webView.post {
+                webView.evaluateJavascript("window.onSubtitleUpdated && window.onSubtitleUpdated('$safeLabel');", null)
+            }
+        } else {
+            webView.post {
+                webView.evaluateJavascript("window.onSubtitleUpdated && window.onSubtitleUpdated('');", null)
+            }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -276,8 +369,21 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val json = """{"keys":[${keysArray.joinToString(",")}],"type":"temporary"}"""
-        logToJs("ClearKey JSON ready: $json")
         return json.toByteArray(Charsets.UTF_8)
+    }
+
+    private fun wrapGzipIfNeeded(inputStream: InputStream): InputStream {
+        val pb = PushbackInputStream(inputStream, 2)
+        val signature = ByteArray(2)
+        val len = pb.read(signature)
+        if (len > 0) {
+            pb.unread(signature, 0, len)
+        }
+        return if (len == 2 && signature[0] == 0x1f.toByte() && signature[1] == 0x8b.toByte()) {
+            GZIPInputStream(pb)
+        } else {
+            pb
+        }
     }
 
     private fun fetchUrlTextWithHeaders(urlStr: String, headers: Map<String, String>): String {
@@ -285,21 +391,161 @@ class MainActivity : AppCompatActivity() {
             val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 12000
-                readTimeout = 15000
+                readTimeout = 20000
                 instanceFollowRedirects = true
                 headers.forEach { (k, v) -> setRequestProperty(k, v) }
             }
             val code = conn.responseCode
-            logToJs("HTTP Fetch [$code] -> $urlStr")
             if (code !in 200..399) return ""
-            conn.inputStream.bufferedReader().use { it.readText() }
+            wrapGzipIfNeeded(conn.inputStream).bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            logToJs("HTTP Fetch error: ${e.message}", isError = true)
+            Log.e("IPTV_Native", "HTTP Fetch error: ${e.message}")
             ""
         }
     }
 
+    private fun parseXmltvTime(raw: String): Long {
+        val clean = raw.trim()
+        if (clean.length < 14) return 0L
+        return try {
+            if (clean.length >= 19 && (clean.contains("+") || clean.contains("-"))) {
+                SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US).parse(clean)?.time ?: 0L
+            } else {
+                val sdf = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }
+                sdf.parse(clean.substring(0, 14))?.time ?: 0L
+            }
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    private fun formatShortTime(ms: Long): String {
+        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
+    }
+
+    private fun parseFastEpgFromUrl(epgUrl: String, userAgent: String) {
+        thread {
+            try {
+                val conn = (URL(epgUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", userAgent)
+                    setRequestProperty("Accept", "*/*")
+                }
+                if (conn.responseCode !in 200..399) return@thread
+
+                val nowMs = System.currentTimeMillis()
+                val windowEndMs = nowMs + 6 * 3600_000L
+
+                data class ProgSlot(
+                    var nowTitle: String = "",
+                    var nowTime: String = "",
+                    var nextTitle: String = "",
+                    var nextStartMs: Long = Long.MAX_VALUE
+                )
+
+                val epgMap = mutableMapOf<String, ProgSlot>()
+                val displayNameToId = mutableMapOf<String, String>()
+
+                wrapGzipIfNeeded(conn.inputStream).use { stream ->
+                    val parser = Xml.newPullParser()
+                    parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+                    parser.setInput(stream, null)
+
+                    var eventType = parser.eventType
+                    var currentChannelId = ""
+                    var inChannel = false
+                    var inProgramme = false
+                    var progChannel = ""
+                    var progStart = 0L
+                    var progStop = 0L
+                    var currentTag = ""
+
+                    while (eventType != XmlPullParser.END_DOCUMENT) {
+                        when (eventType) {
+                            XmlPullParser.START_TAG -> {
+                                currentTag = parser.name ?: ""
+                                if (currentTag.equals("channel", true)) {
+                                    inChannel = true
+                                    currentChannelId = (parser.getAttributeValue(null, "id") ?: "").trim().lowercase(Locale.ROOT)
+                                } else if (currentTag.equals("programme", true)) {
+                                    val startStr = parser.getAttributeValue(null, "start") ?: ""
+                                    val stopStr = parser.getAttributeValue(null, "stop") ?: ""
+                                    progStart = parseXmltvTime(startStr)
+                                    progStop = parseXmltvTime(stopStr)
+                                    if (progStop > nowMs && progStart < windowEndMs) {
+                                        inProgramme = true
+                                        progChannel = (parser.getAttributeValue(null, "channel") ?: "").trim().lowercase(Locale.ROOT)
+                                    } else {
+                                        inProgramme = false
+                                    }
+                                }
+                            }
+                            XmlPullParser.TEXT -> {
+                                val text = parser.text?.trim() ?: ""
+                                if (text.isNotEmpty()) {
+                                    if (inChannel && currentTag.equals("display-name", true) && currentChannelId.isNotEmpty()) {
+                                        displayNameToId[text.lowercase(Locale.ROOT)] = currentChannelId
+                                    } else if (inProgramme && currentTag.equals("title", true) && progChannel.isNotEmpty()) {
+                                        val slot = epgMap.getOrPut(progChannel) { ProgSlot() }
+                                        if (progStart <= nowMs && progStop > nowMs) {
+                                            slot.nowTitle = text
+                                            slot.nowTime = "${formatShortTime(progStart)} - ${formatShortTime(progStop)}"
+                                        } else if (progStart > nowMs && progStart < slot.nextStartMs) {
+                                            slot.nextStartMs = progStart
+                                            slot.nextTitle = "${formatShortTime(progStart)} $text"
+                                        }
+                                    }
+                                }
+                            }
+                            XmlPullParser.END_TAG -> {
+                                val endName = parser.name ?: ""
+                                if (endName.equals("channel", true)) {
+                                    inChannel = false
+                                    currentChannelId = ""
+                                } else if (endName.equals("programme", true)) {
+                                    inProgramme = false
+                                }
+                                currentTag = ""
+                            }
+                        }
+                        eventType = parser.next()
+                    }
+                }
+
+                val rootJson = JSONObject()
+                val channelsJson = JSONObject()
+                for ((chId, slot) in epgMap) {
+                    if (slot.nowTitle.isNotEmpty() || slot.nextTitle.isNotEmpty()) {
+                        val item = JSONObject()
+                        item.put("now", slot.nowTitle)
+                        item.put("time", slot.nowTime)
+                        item.put("next", slot.nextTitle)
+                        channelsJson.put(chId, item)
+                    }
+                }
+                for ((dispName, chId) in displayNameToId) {
+                    if (!channelsJson.has(dispName) && channelsJson.has(chId)) {
+                        channelsJson.put(dispName, channelsJson.getJSONObject(chId))
+                    }
+                }
+                rootJson.put("epg", channelsJson)
+                val quoted = JSONObject.quote(rootJson.toString())
+                webView.post {
+                    webView.evaluateJavascript("window.onNativeEpgLoaded && window.onNativeEpgLoaded($quoted);", null)
+                }
+            } catch (e: Exception) {
+                Log.e("IPTV_EPG", "EPG parse failed: ${e.message}")
+            }
+        }
+    }
+
     private fun startPlayback(req: StreamRequest) {
+        subtitleOverrideApplied = false
         val cookieValue = CookieManager.getInstance().getCookie(req.url)
         val headers = mutableMapOf<String, String>().apply {
             put("User-Agent", req.userAgent)
@@ -326,7 +572,6 @@ class MainActivity : AppCompatActivity() {
                 val body = fetchUrlTextWithHeaders(cleanCkUrl, headers).trim()
                 if (body.startsWith("{") || body.contains(":")) {
                     resolvedClearKey = body
-                    logToJs("Loaded remote ClearKey: $body")
                 } else {
                     clearKeyHttpUrl = cleanCkUrl
                 }
@@ -336,6 +581,13 @@ class MainActivity : AppCompatActivity() {
                 val player = exoPlayer ?: return@runOnUiThread
                 player.stop()
                 player.clearMediaItems()
+
+                player.trackSelectionParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setPreferredTextLanguages("ms", "may", "msa", "zsm", "en", "eng")
+                    .build()
 
                 val dataSourceFactory = DefaultHttpDataSource.Factory()
                     .setUserAgent(req.userAgent)
@@ -350,7 +602,6 @@ class MainActivity : AppCompatActivity() {
                 when (req.format) {
                     "mpd" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
                     "hls" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-                    // "raw" / "auto" leaves MimeType unset for native .ts or progressive detection
                 }
 
                 val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
@@ -375,7 +626,7 @@ class MainActivity : AppCompatActivity() {
                             .build(drmCallback)
                         mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
                     } catch (e: Exception) {
-                        logToJs("ClearKey error: ${e.message}", isError = true)
+                        Log.e("IPTV_Native", "ClearKey error: ${e.message}")
                     }
                 } else if (req.licenseUrl.startsWith("http")) {
                     val cleanLicUrl = req.licenseUrl.split("|")[0].trim()
@@ -407,10 +658,7 @@ class MainActivity : AppCompatActivity() {
             clearKey: String?
         ) {
             val cleanUrl = url.trim()
-            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-                logToJs("Invalid URL: $cleanUrl", isError = true)
-                return
-            }
+            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) return
 
             val ua = if (!userAgent.isNullOrBlank()) userAgent.trim() else "TiviMate/4.7.0 (Linux; Android 13)"
             val ref = referer?.trim() ?: ""
@@ -424,11 +672,17 @@ class MainActivity : AppCompatActivity() {
                 else -> "raw"
             }
 
-            logToJs("Tuning: $cleanUrl | Format: $initialFormat | UA: $ua | ClearKey: ${ck.isNotEmpty()} | Widevine: ${lic.isNotEmpty()}")
-
             val req = StreamRequest(cleanUrl, initialFormat, ua, ref, lic, ck, 0)
             lastRequest = req
             startPlayback(req)
+        }
+
+        @JavascriptInterface
+        fun loadNativeEpg(epgUrl: String, userAgent: String?) {
+            val clean = epgUrl.trim()
+            if (!clean.startsWith("http://") && !clean.startsWith("https://")) return
+            val ua = if (!userAgent.isNullOrBlank()) userAgent.trim() else "TiviMate/4.7.0 (Linux; Android 13)"
+            parseFastEpgFromUrl(clean, ua)
         }
 
         @JavascriptInterface
