@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <automotiveApp>
-    <!-- Declares that your app acts as a media/video playback app for Android Auto -->
     <uses name="media" />
 </automotiveApp>
