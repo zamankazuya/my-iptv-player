@@ -29,7 +29,7 @@
 </head>
 <body class="flex flex-col h-full w-full p-2 gap-1.5 bg-transparent relative">
 
-  <!-- FULLSCREEN WAKE SHIELD: Absorbs the first touch when fullscreen so boxes appear first -->
+  <!-- FULLSCREEN WAKE SHIELD -->
   <div id="wakeShield" class="hidden fixed inset-0 z-40 bg-transparent cursor-pointer"></div>
 
   <!-- MAIN VIDEO OVERLAY AREA -->
@@ -51,142 +51,112 @@
               <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Select a Channel</div>
               <span id="resBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-white/20 text-white font-bold">AUTO</span>
               <span id="drmBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300 font-bold">DRM</span>
-              <span id="subBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-sky-500/30 text-sky-300 font-bold">SUB: MALAY</span>
-              <span id="audBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-300 font-bold">AUD: MALAY</span>
+              <span id="subBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-sky-500/30 text-sky-300 font-bold">SUB</span>
+              <span id="audBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-300 font-bold">AUD</span>
             </div>
             <div id="nowPlayingEpg" class="text-[11px] theme-text truncate max-w-md drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Live Stream Ready</div>
           </div>
         </div>
       </div>
 
-      <!-- TOP-RIGHT VERTICAL ICON STACK (Search -> Favourite Star -> Channel Jump TV -> Settings Gear) -->
+      <!-- TOP-RIGHT ICON STACK -->
       <div id="rightActionStack" class="absolute top-1 right-1 flex flex-col gap-2 z-20 transition-opacity duration-250">
-        <!-- 1. Search Icon -->
         <button id="btnOpenSearch" type="button" title="Search Channel" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="7"></circle>
-            <path stroke-linecap="round" d="M20 20l-3.5-3.5"></path>
-          </svg>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path stroke-linecap="round" d="M20 20l-3.5-3.5"></path></svg>
         </button>
-
-        <!-- 2. Star Icon (Mark Current Channel as Favourite) -->
-        <button id="btnToggleCurrentFav" type="button" title="Mark Channel as Favourite" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white/80 active:scale-95 shadow-lg">
-          <svg id="starIconSvg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path>
-          </svg>
+        <button id="btnToggleCurrentFav" type="button" title="Favourite" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white/80 active:scale-95 shadow-lg">
+          <svg id="starIconSvg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.563.563 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path></svg>
         </button>
-
-        <!-- 3. Channel Jump TV Icon -->
         <button id="btnOpenChannelJump" type="button" title="Channel Jump" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <rect x="2" y="6" width="20" height="14" rx="2" ry="2"></rect>
-            <path stroke-linecap="round" stroke-linejoin="round" d="M17 2l-5 4-5-4"></path>
-          </svg>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="2" ry="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M17 2l-5 4-5-4"></path></svg>
         </button>
-
-        <!-- 4. Settings Gear Icon -->
         <button id="btnOpenSettings" type="button" title="Settings" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><circle cx="12" cy="12" r="3"></circle></svg>
         </button>
       </div>
 
     </section>
   </main>
 
-  <!-- BOTTOM FAVOURITES BAR (Compact Padding, Large Channel Logos, Zero Wasted Header Space) -->
+  <!-- BOTTOM FAVOURITES BAR -->
   <section id="channelDeck" class="glass rounded-2xl p-1.5 h-24 shrink-0 flex items-center transition-opacity duration-250 z-20">
     <div id="channelGrid" class="flex items-center gap-2 overflow-x-auto no-scrollbar w-full h-full"></div>
   </section>
 
-  <!-- 1. SEARCH MODAL (Magnifying Glass) -->
+  <!-- 1. SEARCH MODAL -->
   <div id="modalSearch" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 flex flex-col gap-3 max-h-[85dvh]">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xs font-bold text-white">Search Channel</h2>
-        <button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button>
-      </div>
+      <div class="flex items-center justify-between"><h2 class="text-xs font-bold text-white">Search Channel</h2><button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button></div>
       <input id="searchModalInput" type="text" placeholder="Type channel name..." class="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none" />
       <div id="searchResultsList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-64"></div>
     </div>
   </div>
 
-  <!-- 2. CHANNEL JUMP MODAL (TV Icon) -->
+  <!-- 2. CHANNEL JUMP MODAL -->
   <div id="modalChannelJump" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 flex flex-col gap-3 max-h-[85dvh]">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xs font-bold text-white">Channel Jump (<span id="totalChannelCount">0</span>)</h2>
-        <button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button>
-      </div>
-      <div>
-        <label class="block text-[10px] text-white/50 mb-1">Category Group</label>
-        <select id="groupSelect" class="w-full px-3 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white focus:outline-none"></select>
-      </div>
+      <div class="flex items-center justify-between"><h2 class="text-xs font-bold text-white">Channel Jump (<span id="totalChannelCount">0</span>)</h2><button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button></div>
+      <div><label class="block text-[10px] text-white/50 mb-1">Category Group</label><select id="groupSelect" class="w-full px-3 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white focus:outline-none"></select></div>
       <div id="jumpChannelList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-64"></div>
     </div>
   </div>
 
-  <!-- 3. FAVOURITE SELECTOR MODAL (Plus Icon / Radio Buttons) -->
+  <!-- 3. FAVOURITE SELECTOR MODAL -->
   <div id="modalFavSelector" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 flex flex-col gap-3 max-h-[85dvh]">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xs font-bold text-white">Select Favourite Channels (<span id="favCountBadge">0</span>)</h2>
-        <button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button>
-      </div>
+      <div class="flex items-center justify-between"><h2 class="text-xs font-bold text-white">Select Favourite Channels (<span id="favCountBadge">0</span>)</h2><button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button></div>
       <input id="favFilterInput" type="text" placeholder="Filter channels..." class="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none" />
       <div id="favRadioList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-64"></div>
-      <div class="flex justify-end pt-1">
-        <button class="btnCloseModal px-4 py-1.5 rounded-xl theme-btn font-bold text-xs">Done</button>
-      </div>
+      <div class="flex justify-end pt-1"><button class="btnCloseModal px-4 py-1.5 rounded-xl theme-btn font-bold text-xs">Done</button></div>
     </div>
   </div>
 
-  <!-- 4. UNIFIED SETTINGS MODAL (Sorted into Logical Groups) -->
+  <!-- 4. UNIFIED SETTINGS MODAL -->
   <div id="modalSettings" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3">
     <div class="glass rounded-2xl max-w-lg w-full p-4 flex flex-col gap-3 max-h-[92dvh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-white/10 pb-2">
-        <div>
-          <h2 class="text-sm font-bold text-white">Player & Interface Settings</h2>
-          <span id="epgStatusBadge" class="text-[10px] theme-text">Configure playlist, playback, and appearance</span>
-        </div>
+        <div><h2 class="text-sm font-bold text-white">Player & Interface Settings</h2><span id="epgStatusBadge" class="text-[10px] theme-text">Configure playlist, stream, and appearance</span></div>
         <button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button>
       </div>
 
-      <!-- GROUP 1: PLAYLIST & EPG SOURCES -->
+      <!-- GROUP 1: PLAYLIST, BACKUP & EPG -->
       <div class="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
-        <div class="text-[11px] font-bold theme-text uppercase tracking-wider">1. Playlist & EPG Sources</div>
+        <div class="text-[11px] font-bold theme-text uppercase tracking-wider">1. Playlist, Backup & EPG</div>
         <div>
-          <label class="block text-[10px] text-white/70 mb-1">M3U Playlist URL or Local File</label>
+          <label class="block text-[10px] text-white/70 mb-1">M3U Playlist URL or File</label>
           <input id="m3uUrlInput" type="url" placeholder="https://example.com/playlist.m3u" class="w-full px-3 py-1.5 rounded-xl bg-black/40 border border-white/15 text-xs text-white mb-1.5" />
           <input id="m3uFileInput" type="file" accept=".m3u,.m3u8,.txt" class="w-full text-[11px] text-white/70" />
         </div>
         <div>
-          <label class="block text-[10px] text-white/70 mb-1">EPG XMLTV URL (Auto-detected if inside M3U)</label>
+          <label class="block text-[10px] text-white/70 mb-1">EPG XMLTV URL</label>
           <input id="epgUrlInput" type="url" placeholder="https://example.com/epg.xml.gz" class="w-full px-3 py-1.5 rounded-xl bg-black/40 border border-white/15 text-xs text-white" />
+        </div>
+        <!-- Backup & Restore Buttons -->
+        <div class="flex gap-2 pt-1">
+          <button id="btnExportSettings" type="button" class="flex-1 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white">💾 Backup Config</button>
+          <label class="flex-1 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white text-center cursor-pointer">
+            📂 Restore Config
+            <input id="restoreFileInput" type="file" accept=".json" class="hidden" />
+          </label>
         </div>
       </div>
 
-      <!-- GROUP 2: PLAYBACK, STREAM & TRACK PREFERENCES -->
+      <!-- GROUP 2: PLAYBACK & STREAM PREFERENCES -->
       <div class="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2.5">
         <div class="text-[11px] font-bold theme-text uppercase tracking-wider">2. Playback & Stream Preferences</div>
-
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <label class="flex items-center gap-2.5 p-2 rounded-xl bg-black/30 border border-white/10 cursor-pointer">
             <input id="chkAutoPlayLast" type="checkbox" class="w-4 h-4 rounded" />
             <span class="text-xs text-white font-medium">Auto-Play Last Channel</span>
           </label>
-
           <label class="flex items-center gap-2.5 p-2 rounded-xl bg-black/30 border border-white/10 cursor-pointer">
             <input id="chkBgAudioExit" type="checkbox" class="w-4 h-4 rounded" />
             <span class="text-xs text-white font-medium">Audio Play on Exit</span>
           </label>
         </div>
-
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
-            <label class="block text-[10px] text-white/70 mb-1">Channel Resolution Picker</label>
+            <label class="block text-[10px] text-white/70 mb-1">Channel Resolution</label>
             <select id="resPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
               <option value="0">Auto (Default)</option>
               <option value="1080">1080p Full HD</option>
@@ -195,7 +165,6 @@
               <option value="360">360p Data Saver</option>
             </select>
           </div>
-
           <div>
             <label class="block text-[10px] text-white/70 mb-1">User-Agent Spoofing</label>
             <select id="uaPresetSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
@@ -206,10 +175,9 @@
             </select>
           </div>
         </div>
-
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
-            <label class="block text-[10px] text-white/70 mb-1">Preferred Subtitle (All Channels)</label>
+            <label class="block text-[10px] text-white/70 mb-1">Preferred Subtitle</label>
             <select id="subPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
               <option value="ms_en">Malay 1st, English 2nd</option>
               <option value="en_ms">English 1st, Malay 2nd</option>
@@ -218,9 +186,8 @@
               <option value="off">Subtitles Off</option>
             </select>
           </div>
-
           <div>
-            <label class="block text-[10px] text-white/70 mb-1">Audio Track (All Channels)</label>
+            <label class="block text-[10px] text-white/70 mb-1">Audio Track Selector</label>
             <select id="audioPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
               <option value="ms_en">Malay 1st, English 2nd</option>
               <option value="en_ms">English 1st, Malay 2nd</option>
@@ -232,26 +199,32 @@
         </div>
       </div>
 
-      <!-- GROUP 3: INTERFACE & APPEARANCE -->
+      <!-- GROUP 3: INTERFACE, ASPECT RATIO & APPEARANCE -->
       <div class="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-2.5">
-        <div class="text-[11px] font-bold theme-text uppercase tracking-wider">3. Interface & Appearance</div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div class="text-[11px] font-bold theme-text uppercase tracking-wider">3. Interface, Aspect Ratio & Appearance</div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div>
-            <label class="block text-[10px] text-white/70 mb-1">Two-Tone UI Color Scheme (7 Combos)</label>
+            <label class="block text-[10px] text-white/70 mb-1">Color Scheme (7 Combos)</label>
             <select id="themeSchemeSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="ocean">1. Ocean Sky & Deep Slate</option>
-              <option value="emerald">2. Emerald Mint & Forest</option>
+              <option value="ocean">1. Ocean Sky & Slate</option>
+              <option value="emerald">2. Emerald & Forest</option>
               <option value="sunset">3. Sunset Gold & Crimson</option>
               <option value="royal">4. Royal Violet & Indigo</option>
               <option value="cyber">5. Cyber Cyan & Magenta</option>
               <option value="ruby">6. Ruby Rose & Obsidian</option>
-              <option value="titanium">7. Titanium Ice & Graphite</option>
+              <option value="titanium">7. Titanium & Graphite</option>
             </select>
           </div>
-
           <div>
-            <label class="block text-[10px] text-white/70 mb-1">Fullscreen Auto-Hide Timeout</label>
+            <label class="block text-[10px] text-white/70 mb-1">Aspect Ratio Mode</label>
+            <select id="aspectRatioSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
+              <option value="0">Fit (Default)</option>
+              <option value="1">Zoom (Crop to Fill)</option>
+              <option value="2">Fill (Stretch)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] text-white/70 mb-1">Fullscreen Timeout</label>
             <select id="timeoutPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
               <option value="3000">3 Seconds</option>
               <option value="5000">5 Seconds</option>
@@ -260,13 +233,9 @@
             </select>
           </div>
         </div>
-
         <div>
-          <div class="flex justify-between text-[10px] text-white/70 mb-1">
-            <span>UI & Subtitle Font Size</span>
-            <span id="fontSizeValueLabel" class="font-bold theme-text">100%</span>
-          </div>
-          <input id="fontSizeSlider" type="range" min="85" max="130" step="5" value="100" class="w-full cursor-pointer" />
+          <div class="flex justify-between text-[10px] text-white/70 mb-1"><span>UI & Subtitle Font Size</span><span id="fontSizeValueLabel" class="font-bold theme-text">100%</span></div>
+          <input id="fontSizeSlider" type="range" min="85" max="140" step="5" value="100" class="w-full cursor-pointer" />
         </div>
       </div>
 
@@ -308,6 +277,7 @@
       subPref: localStorage.getItem('tvos_sub_pref') || 'ms_en',
       audioPref: localStorage.getItem('tvos_audio_pref') || 'ms_en',
       resPref: parseInt(localStorage.getItem('tvos_res_pref') || '0', 10),
+      resizeMode: parseInt(localStorage.getItem('tvos_resize_mode') || '0', 10),
       autoPlayLast: localStorage.getItem('tvos_autoplay_last') !== 'false',
       bgAudioExit: localStorage.getItem('tvos_bgaudio_exit') === 'true',
       hideTimeoutMs: parseInt(localStorage.getItem('tvos_hide_timeout') || '5000', 10),
@@ -328,7 +298,7 @@
       document.documentElement.style.fontSize = (16 * (state.fontScale / 100)) + 'px';
 
       if (hasBridge() && window.AndroidBridge.setPlayerOptions) {
-        window.AndroidBridge.setPlayerOptions(state.resPref, state.bgAudioExit, state.fontScale);
+        window.AndroidBridge.setPlayerOptions(state.resPref, state.bgAudioExit, state.fontScale, state.resizeMode);
       }
     }
 
@@ -430,6 +400,43 @@
         if (state.uiVisible) startUiHideTimer();
       }, true);
     });
+
+    // Bluetooth Remote / D-pad Up and Down Zapping through Favourites
+    window.zapFavouriteChannel = (direction) => {
+      const favs = state.channels.filter(ch => isChannelFav(ch));
+      if (favs.length === 0) return;
+      showUi();
+      let idx = favs.findIndex(c => state.current && c.id === state.current.id);
+      if (idx === -1) {
+        window.playChannel(favs[0]);
+        return;
+      }
+      idx = (idx + direction + favs.length) % favs.length;
+      window.playChannel(favs[idx]);
+    };
+
+    // Gemini Voice Control Bridge Commands
+    window.executeVoiceCommand = (cmdText) => {
+      const text = (cmdText || '').toLowerCase().trim();
+      if (text.includes('stop') || text.includes('pause')) {
+        document.getElementById('btnPlayPause').click();
+        return "Stream paused.";
+      }
+      if (text.includes('start') || text.includes('play') && !text.includes('play channel')) {
+        if (state.current) window.playChannel(state.current);
+        return "Resumed playback.";
+      }
+      if (text.includes('switch to') || text.includes('play channel') || text.includes('change channel')) {
+        const query = text.replace('switch to', '').replace('play channel', '').replace('change channel', '').trim();
+        const match = state.channels.find(c => c.name.toLowerCase().includes(query));
+        if (match) {
+          window.playChannel(match);
+          return `Switched to ${match.name}`;
+        }
+        return `Channel ${query} not found.`;
+      }
+      return "Command not recognized.";
+    };
 
     window.onNativePlayerState = (s) => {
       document.getElementById('loading').classList.toggle('hidden', s !== 'BUFFERING');
@@ -533,7 +540,7 @@
           window.AndroidBridge.setLanguagePreferences(state.subPref, state.audioPref);
         }
         if (window.AndroidBridge.setPlayerOptions) {
-          window.AndroidBridge.setPlayerOptions(state.resPref, state.bgAudioExit, state.fontScale);
+          window.AndroidBridge.setPlayerOptions(state.resPref, state.bgAudioExit, state.fontScale, state.resizeMode);
         }
         window.AndroidBridge.playNativeStream(
           ch.url,
@@ -547,7 +554,6 @@
       startUiHideTimer();
     };
 
-    // Renders the bottom Favourites bar with BIG Channel Logos and minimal empty space
     function renderFavoritesDeck() {
       const grid = document.getElementById('channelGrid');
       const favChannels = state.channels.filter(ch => isChannelFav(ch));
@@ -962,6 +968,7 @@
       document.getElementById('subPrefSelect').value = state.subPref;
       document.getElementById('audioPrefSelect').value = state.audioPref;
       document.getElementById('resPrefSelect').value = String(state.resPref);
+      document.getElementById('aspectRatioSelect').value = String(state.resizeMode);
       document.getElementById('chkAutoPlayLast').checked = state.autoPlayLast;
       document.getElementById('chkBgAudioExit').checked = state.bgAudioExit;
       document.getElementById('timeoutPrefSelect').value = String(state.hideTimeoutMs);
@@ -975,6 +982,66 @@
       document.getElementById('fontSizeValueLabel').textContent = e.target.value + '%';
     });
 
+    // Backup / Export Config
+    document.getElementById('btnExportSettings').addEventListener('click', () => {
+      const backupData = {
+        favorites: [...state.favorites],
+        saved_m3u_url: localStorage.getItem('saved_m3u_url') || '',
+        saved_epg_url: localStorage.getItem('saved_epg_url') || '',
+        tvos_ua: state.globalUA,
+        tvos_sub_pref: state.subPref,
+        tvos_audio_pref: state.audioPref,
+        tvos_res_pref: state.resPref,
+        tvos_resize_mode: state.resizeMode,
+        tvos_autoplay_last: state.autoPlayLast,
+        tvos_bgaudio_exit: state.bgAudioExit,
+        tvos_hide_timeout: state.hideTimeoutMs,
+        tvos_font_scale: state.fontScale,
+        tvos_theme_scheme: state.themeScheme
+      };
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'iptv_backup_config.json';
+      a.click();
+    });
+
+    // Restore / Import Config
+    document.getElementById('restoreFileInput').addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = (ev) => {
+        try {
+          const d = JSON.parse(ev.target.result);
+          if (d.favorites) {
+            state.favorites = new Set(d.favorites);
+            localStorage.setItem('tvos_favorites', JSON.stringify(d.favorites));
+          }
+          if (d.saved_m3u_url) localStorage.setItem('saved_m3u_url', d.saved_m3u_url);
+          if (d.saved_epg_url) localStorage.setItem('saved_epg_url', d.saved_epg_url);
+          if (d.tvos_ua) { state.globalUA = d.tvos_ua; localStorage.setItem('tvos_ua', d.tvos_ua); }
+          if (d.tvos_sub_pref) { state.subPref = d.tvos_sub_pref; localStorage.setItem('tvos_sub_pref', d.tvos_sub_pref); }
+          if (d.tvos_audio_pref) { state.audioPref = d.tvos_audio_pref; localStorage.setItem('tvos_audio_pref', d.tvos_audio_pref); }
+          if (d.tvos_res_pref !== undefined) { state.resPref = d.tvos_res_pref; localStorage.setItem('tvos_res_pref', String(d.tvos_res_pref)); }
+          if (d.tvos_resize_mode !== undefined) { state.resizeMode = d.tvos_resize_mode; localStorage.setItem('tvos_resize_mode', String(d.tvos_resize_mode)); }
+          if (d.tvos_autoplay_last !== undefined) { state.autoPlayLast = d.tvos_autoplay_last; localStorage.setItem('tvos_autoplay_last', String(d.tvos_autoplay_last)); }
+          if (d.tvos_bgaudio_exit !== undefined) { state.bgAudioExit = d.tvos_bgaudio_exit; localStorage.setItem('tvos_bgaudio_exit', String(d.tvos_bgaudio_exit)); }
+          if (d.tvos_hide_timeout !== undefined) { state.hideTimeoutMs = d.tvos_hide_timeout; localStorage.setItem('tvos_hide_timeout', String(d.tvos_hide_timeout)); }
+          if (d.tvos_font_scale !== undefined) { state.fontScale = d.tvos_font_scale; localStorage.setItem('tvos_font_scale', String(d.tvos_font_scale)); }
+          if (d.tvos_theme_scheme) { state.themeScheme = d.tvos_theme_scheme; localStorage.setItem('tvos_theme_scheme', d.tvos_theme_scheme); }
+
+          applyVisualSettings();
+          alert("Configuration restored successfully! Reloading...");
+          location.reload();
+        } catch (err) {
+          alert("Invalid backup JSON file.");
+        }
+      };
+      r.readAsText(f);
+    });
+
     document.querySelectorAll('.btnCloseModal').forEach(b => {
       b.addEventListener('click', () => closeAllModals());
     });
@@ -985,6 +1052,7 @@
       const subVal = document.getElementById('subPrefSelect').value;
       const audVal = document.getElementById('audioPrefSelect').value;
       const resVal = parseInt(document.getElementById('resPrefSelect').value, 10) || 0;
+      const resizeVal = parseInt(document.getElementById('aspectRatioSelect').value, 10) || 0;
       const autoPlayVal = document.getElementById('chkAutoPlayLast').checked;
       const bgAudioVal = document.getElementById('chkBgAudioExit').checked;
       const timeoutVal = parseInt(document.getElementById('timeoutPrefSelect').value, 10) || 5000;
@@ -997,6 +1065,7 @@
       state.subPref = subVal;
       state.audioPref = audVal;
       state.resPref = resVal;
+      state.resizeMode = resizeVal;
       state.autoPlayLast = autoPlayVal;
       state.bgAudioExit = bgAudioVal;
       state.hideTimeoutMs = timeoutVal;
@@ -1007,6 +1076,7 @@
       localStorage.setItem('tvos_sub_pref', subVal);
       localStorage.setItem('tvos_audio_pref', audVal);
       localStorage.setItem('tvos_res_pref', String(resVal));
+      localStorage.setItem('tvos_resize_mode', String(resizeVal));
       localStorage.setItem('tvos_autoplay_last', String(autoPlayVal));
       localStorage.setItem('tvos_bgaudio_exit', String(bgAudioVal));
       localStorage.setItem('tvos_hide_timeout', String(timeoutVal));
