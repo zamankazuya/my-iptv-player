@@ -23,16 +23,15 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.CAR_MODE" />
+                <category android:name="android.intent.category.CAR_DOCK" />
             </intent-filter>
 
             <intent-filter>
                 <action android:name="androidx.car.app.action.RENDER" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-
-        <meta-data
-            android:name="com.google.android.gms.car.application"
-            android:resource="@xml/automotive_app_desc" />
 
     </application>
 </manifest>
