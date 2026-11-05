@@ -11,7 +11,7 @@
     .glass { background: rgba(18, 19, 26, 0.88); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.15); transition: opacity 0.3s ease, transform 0.3s ease; }
     .glass-active { background: rgba(14, 165, 233, 0.35); border-color: #38bdf8 !important; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
-    .ui-hidden { opacity: 0; pointer-events: none; }
+    .ui-hidden { opacity: 0 !important; pointer-events: none !important; }
   </style>
 </head>
 <body class="flex h-full w-full p-2 gap-2 bg-transparent">
@@ -53,20 +53,21 @@
         <div id="loadingText" class="text-xs text-white font-semibold">Tuning Native ExoPlayer...</div>
       </div>
 
-      <div id="topBar" class="absolute top-0 inset-x-0 p-3 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent z-10 glass border-none rounded-t-3xl">
+      <!-- Top Bar (Clean, Borderless, Auto-Hides) -->
+      <div id="topBar" class="absolute top-0 inset-x-0 p-3 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent z-10 transition-opacity duration-300">
         <div>
-          <div id="nowPlayingTitle" class="text-xs font-bold text-white truncate max-w-xs">Select a Channel</div>
-          <div id="nowPlayingEpg" class="text-[10px] text-sky-300 truncate max-w-xs">Live EPG Ready</div>
+          <div id="nowPlayingTitle" class="text-xs font-bold text-white truncate max-w-xs drop-shadow">Select a Channel</div>
+          <div id="nowPlayingEpg" class="text-[10px] text-sky-300 truncate max-w-xs drop-shadow">Live EPG Ready</div>
         </div>
         <div class="flex items-center gap-2">
           <span id="drmBadge" class="hidden text-[9px] px-2 py-0.5 rounded bg-amber-500/25 text-amber-300 border border-amber-400/30 font-bold">DRM</span>
-          <button id="btnPlayPause" class="px-3.5 py-1.5 rounded-xl bg-white text-black font-bold text-xs">Pause</button>
+          <button id="btnPlayPause" class="px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur text-white font-bold text-xs border border-white/10">Pause</button>
         </div>
       </div>
     </section>
 
     <!-- CHANNEL DECK -->
-    <section id="channelDeck" class="glass rounded-3xl p-2.5 h-32 shrink-0 flex flex-col justify-between">
+    <section id="channelDeck" class="glass rounded-3xl p-2.5 h-32 shrink-0 flex flex-col justify-between transition-opacity duration-300">
       <div class="flex justify-between px-1 text-[11px] font-bold text-white/80">
         <span>Channels (<span id="channelCountBadge">0</span>)</span>
       </div>
@@ -105,8 +106,8 @@
   <script>
     const state = {
       channels: [
-        { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: 'TiviMate/5.3.3', referer: '', licenseUrl: '' },
-        { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: 'OTT Navigator/1.7.5.1', referer: '', licenseUrl: '' }
+        { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: 'TiviMate/5.3.3', referer: '', licenseUrl: '', clearKey: '' },
+        { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: 'OTT Navigator/1.7.5.1', referer: '', licenseUrl: '', clearKey: '' }
       ],
       filtered: [], group: 'All', search: '', current: null,
       globalUA: localStorage.getItem('tvos_ua') || 'TiviMate/5.3.3 (Linux; Android 13)',
@@ -140,7 +141,6 @@
       document.getElementById('channelDeck').classList.remove('ui-hidden');
     }
 
-    // Keep UI active on any interaction across the whole app
     window.addEventListener('pointerdown', resetUiHideTimer);
     window.addEventListener('keydown', resetUiHideTimer);
 
@@ -158,7 +158,7 @@
       applyFilters();
       document.getElementById('quickChannelSelect').value = ch.id;
       document.getElementById('nowPlayingTitle').textContent = ch.name;
-      document.getElementById('drmBadge').classList.toggle('hidden', !ch.licenseUrl);
+      document.getElementById('drmBadge').classList.toggle('hidden', !ch.licenseUrl && !ch.clearKey);
       
       const isMpd = ch.type === 'mpd' || ch.url.toLowerCase().includes('.mpd');
       document.getElementById('loading').classList.remove('hidden');
@@ -169,7 +169,8 @@
           isMpd ? 'mpd' : 'hls',
           ch.userAgent || state.globalUA,
           ch.referer || '',
-          ch.licenseUrl || ''
+          ch.licenseUrl || '',
+          ch.clearKey || ''
         );
       }
       resetUiHideTimer();
@@ -183,6 +184,7 @@
       let pendingUA = '';
       let pendingReferer = '';
       let pendingLicense = '';
+      let pendingClearKey = '';
 
       for (let i = 0; i < lines.length; i++) {
         let line = lines[i].trim();
@@ -197,7 +199,9 @@
         } else if (line.startsWith('#EXTVLCOPT:http-user-agent=')) {
           pendingUA = line.replace('#EXTVLCOPT:http-user-agent=', '').trim();
         } else if (line.startsWith('#KODIPROP:inputstream.adaptive.license_key=')) {
-          pendingLicense = line.replace('#KODIPROP:inputstream.adaptive.license_key=', '').trim();
+          const lKey = line.replace('#KODIPROP:inputstream.adaptive.license_key=', '').trim();
+          if (lKey.startsWith('http')) pendingLicense = lKey;
+          else if (lKey.includes(':')) pendingClearKey = lKey;
         } else if (!line.startsWith('#')) {
           let streamUrl = line;
           if (line.includes('|')) {
@@ -217,13 +221,15 @@
             type: streamUrl.toLowerCase().includes('.mpd') ? 'mpd' : 'hls',
             userAgent: pendingUA || state.globalUA,
             referer: pendingReferer,
-            licenseUrl: pendingLicense
+            licenseUrl: pendingLicense,
+            clearKey: pendingClearKey
           });
 
           currentMeta = null;
           pendingUA = '';
           pendingReferer = '';
           pendingLicense = '';
+          pendingClearKey = '';
         }
       }
 
@@ -289,7 +295,15 @@
       const r = new FileReader(); r.onload = (ev) => window.parseM3UAndLoad(ev.target.result); r.readAsText(f);
     };
 
-    // Only toggle UI when tapping directly on the video view background (not sidebar or buttons)
+    document.getElementById('btnPlayPause').onclick = (e) => {
+      e.stopPropagation();
+      if (hasBridge()) {
+        const playing = window.AndroidBridge.togglePlayPause();
+        document.getElementById('btnPlayPause').textContent = playing ? 'Pause' : 'Play';
+      }
+      resetUiHideTimer();
+    };
+
     document.getElementById('videoOverlayContainer').onclick = (e) => {
       if (e.target.id === 'videoOverlayContainer' || e.target.id === 'loading') {
         const sidebar = document.getElementById('appSidebar');
