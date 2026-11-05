@@ -53,7 +53,7 @@
         <div id="loadingText" class="text-xs text-white font-semibold">Tuning Native ExoPlayer...</div>
       </div>
 
-      <!-- Completely Borderless, Outline-Free Top Bar (Zero Box Lines) -->
+      <!-- Top Bar -->
       <div id="topBar" class="absolute top-0 inset-x-0 p-4 flex items-center justify-between bg-transparent z-10 transition-opacity duration-300">
         <div>
           <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">Select a Channel</div>
@@ -116,16 +116,13 @@
 
     const hasBridge = () => typeof window.AndroidBridge !== 'undefined';
 
-    // --- AUTO-HIDE UI TIMER (3 SECONDS) ---
     let hideUiTimer = null;
     function resetUiHideTimer() {
       showUi();
       clearTimeout(hideUiTimer);
       hideUiTimer = setTimeout(() => {
         const modalOpen = !document.getElementById('modalM3u').classList.contains('hidden') || !document.getElementById('modalUA').classList.contains('hidden');
-        if (!modalOpen) {
-          hideUi();
-        }
+        if (!modalOpen) { hideUi(); }
       }, 3000);
     }
 
@@ -149,7 +146,7 @@
     };
     window.onNativePlayerError = (msg) => {
       document.getElementById('loading').classList.add('hidden');
-      alert('ExoPlayer Error: ' + msg);
+      console.error("Player Error: " + msg);
     };
 
     window.playChannel = (ch) => {
@@ -162,6 +159,8 @@
       
       const isMpd = ch.type === 'mpd' || ch.url.toLowerCase().includes('.mpd');
       document.getElementById('loading').classList.remove('hidden');
+
+      console.log("Playing channel:", ch.name, "URL:", ch.url);
 
       if (hasBridge()) {
         window.AndroidBridge.playNativeStream(
@@ -176,7 +175,7 @@
       resetUiHideTimer();
     };
 
-    window.parseM3UAndLoad = (rawText) => {
+    window.parseM3UAndLoad = (rawText, saveUrl = '') => {
       if (!rawText || !rawText.includes('#EXTINF')) return;
       const lines = rawText.split(/\r?\n/);
       const parsed = [];
@@ -236,9 +235,9 @@
       if (parsed.length > 0) {
         state.channels = parsed;
         state.group = 'All';
+        if (saveUrl) localStorage.setItem('saved_m3u_url', saveUrl);
         applyFilters();
         document.getElementById('modalM3u').classList.add('hidden');
-        window.playChannel(state.channels[0]);
       }
     };
 
@@ -258,6 +257,7 @@
       qs.innerHTML = '';
       state.filtered.slice(0, 500).forEach((c, i) => {
         const o = document.createElement('option'); o.value = c.id; o.textContent = `${i + 1}. ${c.name}`;
+        if (state.current?.id === c.id) o.selected = true;
         qs.appendChild(o);
       });
 
@@ -272,7 +272,10 @@
         const btn = document.createElement('button');
         btn.className = `glass rounded-2xl p-2.5 w-44 shrink-0 text-left h-full flex flex-col justify-between ${state.current?.id === ch.id ? 'glass-active border-sky-400' : ''}`;
         btn.innerHTML = `<div class="text-xs font-bold text-white truncate">${ch.name}</div><div class="text-[10px] text-sky-300 truncate">${ch.group}</div>`;
-        btn.onclick = (e) => { e.stopPropagation(); window.playChannel(ch); };
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          window.playChannel(ch);
+        };
         grid.appendChild(btn);
       });
     }
@@ -287,7 +290,7 @@
     document.getElementById('btnFetchM3uUrl').onclick = async () => {
       const u = document.getElementById('m3uUrlInput').value.trim(); if (!u) return;
       const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(u, state.globalUA) : await (await fetch(u)).text();
-      window.parseM3UAndLoad(txt);
+      window.parseM3UAndLoad(txt, u);
     };
     
     document.getElementById('m3uFileInput').onchange = (e) => {
@@ -315,7 +318,17 @@
       }
     };
 
-    window.addEventListener('DOMContentLoaded', () => { applyFilters(); window.playChannel(state.channels[0]); resetUiHideTimer(); });
+    // Auto-reload saved playlist on startup if present in localStorage
+    window.addEventListener('DOMContentLoaded', async () => {
+      const savedUrl = localStorage.getItem('saved_m3u_url');
+      if (savedUrl) {
+        document.getElementById('m3uUrlInput').value = savedUrl;
+        const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(savedUrl, state.globalUA) : await (await fetch(savedUrl)).text();
+        window.parseM3UAndLoad(txt, savedUrl);
+      }
+      applyFilters();
+      resetUiHideTimer();
+    });
   </script>
 </body>
 </html>
