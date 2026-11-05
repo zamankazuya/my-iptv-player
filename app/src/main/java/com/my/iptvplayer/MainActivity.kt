@@ -37,6 +37,12 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 @UnstableApi
 class MainActivity : AppCompatActivity() {
@@ -57,6 +63,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        trustAllCertificates() // Allow insecure/self-signed provider SSL certificates like Sparkle TV
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -92,6 +99,22 @@ class MainActivity : AppCompatActivity() {
         initExoPlayer()
         setupWebView()
         webView.loadUrl("file:///android_asset/index.html")
+    }
+
+    private fun trustAllCertificates() {
+        try {
+            val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            })
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, trustAllCerts, SecureRandom())
+            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.socketFactory)
+            HttpsURLConnection.setDefaultHostnameVerifier { _, _ -> true }
+        } catch (e: Exception) {
+            Log.e("SSLTrust", "Failed to trust all certs", e)
+        }
     }
 
     private fun initExoPlayer() {
