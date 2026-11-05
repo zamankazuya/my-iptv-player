@@ -105,4 +105,203 @@
   <script>
     const state = {
       channels: [
-        { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: 'TiviMate/5.3.3', referer
+        { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: 'TiviMate/5.3.3', referer: '', licenseUrl: '' },
+        { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: 'OTT Navigator/1.7.5.1', referer: '', licenseUrl: '' }
+      ],
+      filtered: [], group: 'All', search: '', current: null,
+      globalUA: localStorage.getItem('tvos_ua') || 'TiviMate/5.3.3 (Linux; Android 13)',
+      epgMap: {}
+    };
+
+    const hasBridge = () => typeof window.AndroidBridge !== 'undefined';
+
+    // --- AUTO-HIDE UI TIMER (3 SECONDS) ---
+    let hideUiTimer = null;
+    function resetUiHideTimer() {
+      showUi();
+      clearTimeout(hideUiTimer);
+      hideUiTimer = setTimeout(() => {
+        const modalOpen = !document.getElementById('modalM3u').classList.contains('hidden') || !document.getElementById('modalUA').classList.contains('hidden');
+        if (!modalOpen) {
+          hideUi();
+        }
+      }, 3000);
+    }
+
+    function hideUi() {
+      document.getElementById('appSidebar').classList.add('ui-hidden');
+      document.getElementById('topBar').classList.add('ui-hidden');
+      document.getElementById('channelDeck').classList.add('ui-hidden');
+    }
+
+    function showUi() {
+      document.getElementById('appSidebar').classList.remove('ui-hidden');
+      document.getElementById('topBar').classList.remove('ui-hidden');
+      document.getElementById('channelDeck').classList.remove('ui-hidden');
+    }
+
+    // Keep UI active on any interaction across the whole app
+    window.addEventListener('pointerdown', resetUiHideTimer);
+    window.addEventListener('keydown', resetUiHideTimer);
+
+    window.onNativePlayerState = (s) => {
+      document.getElementById('loading').classList.toggle('hidden', s !== 'BUFFERING');
+    };
+    window.onNativePlayerError = (msg) => {
+      document.getElementById('loading').classList.add('hidden');
+      alert('ExoPlayer Error: ' + msg);
+    };
+
+    window.playChannel = (ch) => {
+      if (!ch) return;
+      state.current = ch;
+      applyFilters();
+      document.getElementById('quickChannelSelect').value = ch.id;
+      document.getElementById('nowPlayingTitle').textContent = ch.name;
+      document.getElementById('drmBadge').classList.toggle('hidden', !ch.licenseUrl);
+      
+      const isMpd = ch.type === 'mpd' || ch.url.toLowerCase().includes('.mpd');
+      document.getElementById('loading').classList.remove('hidden');
+
+      if (hasBridge()) {
+        window.AndroidBridge.playNativeStream(
+          ch.url,
+          isMpd ? 'mpd' : 'hls',
+          ch.userAgent || state.globalUA,
+          ch.referer || '',
+          ch.licenseUrl || ''
+        );
+      }
+      resetUiHideTimer();
+    };
+
+    window.parseM3UAndLoad = (rawText) => {
+      if (!rawText || !rawText.includes('#EXTINF')) return;
+      const lines = rawText.split(/\r?\n/);
+      const parsed = [];
+      let currentMeta = null;
+      let pendingUA = '';
+      let pendingReferer = '';
+      let pendingLicense = '';
+
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        if (!line) continue;
+
+        if (line.startsWith('#EXTINF:')) {
+          const commaIdx = line.lastIndexOf(',');
+          const name = commaIdx !== -1 ? line.substring(commaIdx + 1).trim() : 'Channel';
+          const groupMatch = line.match(/group-title="([^"]+)"/i);
+          const idMatch = line.match(/tvg-id="([^"]+)"/i);
+          currentMeta = { name, group: groupMatch ? groupMatch[1] : 'Live TV', tvgId: idMatch ? idMatch[1] : '' };
+        } else if (line.startsWith('#EXTVLCOPT:http-user-agent=')) {
+          pendingUA = line.replace('#EXTVLCOPT:http-user-agent=', '').trim();
+        } else if (line.startsWith('#KODIPROP:inputstream.adaptive.license_key=')) {
+          pendingLicense = line.replace('#KODIPROP:inputstream.adaptive.license_key=', '').trim();
+        } else if (!line.startsWith('#')) {
+          let streamUrl = line;
+          if (line.includes('|')) {
+            const [baseUrl, headerPart] = line.split('|');
+            streamUrl = baseUrl.trim();
+            const params = new URLSearchParams(headerPart);
+            if (params.get('User-Agent')) pendingUA = params.get('User-Agent');
+            if (params.get('Referer')) pendingReferer = params.get('Referer');
+          }
+
+          parsed.push({
+            id: 'm3u-' + parsed.length,
+            name: currentMeta ? currentMeta.name : `Channel ${parsed.length + 1}`,
+            group: currentMeta ? currentMeta.group : 'Live TV',
+            tvgId: currentMeta ? currentMeta.tvgId : '',
+            url: streamUrl,
+            type: streamUrl.toLowerCase().includes('.mpd') ? 'mpd' : 'hls',
+            userAgent: pendingUA || state.globalUA,
+            referer: pendingReferer,
+            licenseUrl: pendingLicense
+          });
+
+          currentMeta = null;
+          pendingUA = '';
+          pendingReferer = '';
+          pendingLicense = '';
+        }
+      }
+
+      if (parsed.length > 0) {
+        state.channels = parsed;
+        state.group = 'All';
+        applyFilters();
+        document.getElementById('modalM3u').classList.add('hidden');
+        window.playChannel(state.channels[0]);
+      }
+    };
+
+    function applyFilters() {
+      const q = state.search.toLowerCase();
+      state.filtered = state.channels.filter(c => (state.group === 'All' || c.group === state.group) && (!q || c.name.toLowerCase().includes(q)));
+      
+      const gs = document.getElementById('groupSelect');
+      gs.innerHTML = '';
+      ['All', ...new Set(state.channels.map(c => c.group))].forEach(g => {
+        const o = document.createElement('option'); o.value = g; o.textContent = g;
+        if (g === state.group) o.selected = true;
+        gs.appendChild(o);
+      });
+
+      const qs = document.getElementById('quickChannelSelect');
+      qs.innerHTML = '';
+      state.filtered.slice(0, 500).forEach((c, i) => {
+        const o = document.createElement('option'); o.value = c.id; o.textContent = `${i + 1}. ${c.name}`;
+        qs.appendChild(o);
+      });
+
+      renderDeck();
+    }
+
+    function renderDeck() {
+      const grid = document.getElementById('channelGrid');
+      document.getElementById('channelCountBadge').textContent = state.filtered.length;
+      grid.innerHTML = '';
+      state.filtered.slice(0, 150).forEach(ch => {
+        const btn = document.createElement('button');
+        btn.className = `glass rounded-2xl p-2.5 w-44 shrink-0 text-left h-full flex flex-col justify-between ${state.current?.id === ch.id ? 'glass-active border-sky-400' : ''}`;
+        btn.innerHTML = `<div class="text-xs font-bold text-white truncate">${ch.name}</div><div class="text-[10px] text-sky-300 truncate">${ch.group}</div>`;
+        btn.onclick = (e) => { e.stopPropagation(); window.playChannel(ch); };
+        grid.appendChild(btn);
+      });
+    }
+
+    document.getElementById('searchInput').oninput = (e) => { state.search = e.target.value; applyFilters(); resetUiHideTimer(); };
+    document.getElementById('groupSelect').onchange = (e) => { state.group = e.target.value; applyFilters(); resetUiHideTimer(); };
+    document.getElementById('quickChannelSelect').onchange = (e) => { const c = state.filtered.find(x => x.id === e.target.value); if (c) window.playChannel(c); };
+    document.getElementById('btnOpenModal').onclick = () => { document.getElementById('modalM3u').classList.remove('hidden'); showUi(); };
+    document.getElementById('btnOpenUaModal').onclick = () => { document.getElementById('modalUA').classList.remove('hidden'); showUi(); };
+    document.querySelectorAll('.btnCloseModal').forEach(b => b.onclick = () => document.querySelectorAll('#modalM3u,#modalUA').forEach(m => m.classList.add('hidden')));
+    
+    document.getElementById('btnFetchM3uUrl').onclick = async () => {
+      const u = document.getElementById('m3uUrlInput').value.trim(); if (!u) return;
+      const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(u, state.globalUA) : await (await fetch(u)).text();
+      window.parseM3UAndLoad(txt);
+    };
+    
+    document.getElementById('m3uFileInput').onchange = (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      const r = new FileReader(); r.onload = (ev) => window.parseM3UAndLoad(ev.target.result); r.readAsText(f);
+    };
+
+    // Only toggle UI when tapping directly on the video view background (not sidebar or buttons)
+    document.getElementById('videoOverlayContainer').onclick = (e) => {
+      if (e.target.id === 'videoOverlayContainer' || e.target.id === 'loading') {
+        const sidebar = document.getElementById('appSidebar');
+        if (sidebar.classList.contains('ui-hidden')) {
+          resetUiHideTimer();
+        } else {
+          hideUi();
+        }
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => { applyFilters(); window.playChannel(state.channels[0]); resetUiHideTimer(); });
+  </script>
+</body>
+</html>
