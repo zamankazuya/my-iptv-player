@@ -4,21 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Coolwalk IPTV — Native ExoPlayer</title>
-  <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
-  <script>
-    var vConsole = new window.VConsole();
-  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
     html, body { background: transparent !important; color: #f5f5f7; overflow: hidden; height: 100dvh; width: 100vw; margin: 0; font-family: system-ui, sans-serif; }
-    .glass { background: rgba(18, 19, 26, 0.88); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.15); transition: opacity 0.3s ease, transform 0.3s ease; }
+    .glass { background: rgba(18, 19, 26, 0.88); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.15); transition: opacity 0.25s ease, transform 0.25s ease; }
     .glass-active { background: rgba(14, 165, 233, 0.35); border-color: #38bdf8 !important; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .ui-hidden { opacity: 0 !important; pointer-events: none !important; }
   </style>
 </head>
-<body class="flex h-full w-full p-2 gap-2 bg-transparent">
+<body class="flex h-full w-full p-2 gap-2 bg-transparent relative">
+
+  <!-- FULLSCREEN WAKE SHIELD: Captures the first tap when UI is hidden so you never accidentally click a channel -->
+  <div id="wakeShield" class="hidden fixed inset-0 z-40 bg-transparent cursor-pointer"></div>
 
   <!-- LEFT SIDEBAR -->
   <aside id="appSidebar" class="glass rounded-3xl w-64 h-full flex flex-col justify-between p-3 shrink-0 z-20">
@@ -26,7 +25,7 @@
       <div class="flex items-center justify-between pb-2 border-b border-white/10">
         <div>
           <div class="font-bold text-xs text-white">Coolwalk IPTV <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">EXO</span></div>
-          <div id="activeUaBadge" class="text-[10px] text-sky-300 truncate max-w-[140px]">UA: TiviMate/4.7.0</div>
+          <div id="activeUaBadge" class="text-[10px] text-sky-300 truncate max-w-[160px]">UA: TiviMate/4.7.0</div>
         </div>
       </div>
 
@@ -49,7 +48,7 @@
     </div>
   </aside>
 
-  <!-- MAIN VIEW (Zero borders or outlines) -->
+  <!-- MAIN VIEW -->
   <main class="flex-1 flex flex-col gap-2 h-full overflow-hidden border-0 outline-none">
     <section id="videoOverlayContainer" class="relative flex-1 overflow-hidden bg-transparent border-0 outline-none flex items-center justify-center cursor-pointer">
       <div id="loading" class="hidden absolute inset-0 bg-black/40 backdrop-blur-xs flex flex-col items-center justify-center z-10 pointer-events-none">
@@ -57,13 +56,17 @@
         <div id="loadingText" class="text-xs text-white font-semibold">Tuning Native ExoPlayer...</div>
       </div>
 
-      <!-- Top Bar (Borderless & Auto-Hiding) -->
+      <!-- Top Bar -->
       <div id="topBar" class="absolute top-0 inset-x-0 p-4 flex items-center justify-between bg-transparent border-0 outline-none z-10 transition-opacity duration-300">
-        <div>
-          <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Select a Channel</div>
-          <div id="nowPlayingEpg" class="text-[11px] text-sky-300 truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Live Stream Ready</div>
+        <div class="flex items-center gap-3 min-w-0">
+          <img id="nowPlayingLogo" src="" alt="" class="hidden w-10 h-10 rounded-xl object-contain bg-black/50 p-1 border border-white/15 shrink-0" onerror="this.classList.add('hidden')" />
+          <div class="min-w-0">
+            <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Select a Channel</div>
+            <div id="nowPlayingEpg" class="text-[11px] text-sky-300 truncate max-w-md drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Live Stream Ready</div>
+          </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
+          <span id="subBadge" class="hidden text-[9px] px-2 py-0.5 rounded bg-sky-500/25 text-sky-300 font-bold">SUB: BM</span>
           <span id="drmBadge" class="hidden text-[9px] px-2 py-0.5 rounded bg-amber-500/25 text-amber-300 font-bold">DRM</span>
           <button id="btnPlayPause" class="px-3.5 py-1.5 rounded-xl bg-black/50 hover:bg-black/70 text-white font-bold text-xs shadow-lg">Pause</button>
         </div>
@@ -71,11 +74,12 @@
     </section>
 
     <!-- CHANNEL DECK -->
-    <section id="channelDeck" class="glass rounded-3xl p-2.5 h-32 shrink-0 flex flex-col justify-between transition-opacity duration-300">
-      <div class="flex justify-between px-1 text-[11px] font-bold text-white/80">
+    <section id="channelDeck" class="glass rounded-3xl p-2.5 h-32 shrink-0 flex flex-col justify-between transition-opacity duration-300 z-20">
+      <div class="flex justify-between items-center px-1 text-[11px] font-bold text-white/80">
         <span>Channels (<span id="channelCountBadge">0</span>)</span>
+        <span id="epgStatusBadge" class="text-[10px] text-emerald-400 font-normal"></span>
       </div>
-      <div id="channelGrid" class="flex items-center gap-2 overflow-x-auto no-scrollbar h-full"></div>
+      <div id="channelGrid" class="flex items-center gap-2 overflow-x-auto no-scrollbar h-full pt-1"></div>
     </section>
   </main>
 
@@ -83,11 +87,18 @@
   <div id="modalM3u" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 space-y-3">
       <h2 class="text-xs font-bold text-white">Load M3U Playlist & EPG</h2>
-      <input id="m3uUrlInput" type="url" placeholder="https://example.com/playlist.m3u" class="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-xs text-white" />
+      <div>
+        <label class="block text-[10px] text-white/60 mb-1">M3U Playlist URL</label>
+        <input id="m3uUrlInput" type="url" placeholder="https://example.com/playlist.m3u" class="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-xs text-white" />
+      </div>
+      <div>
+        <label class="block text-[10px] text-white/60 mb-1">EPG XMLTV URL (Optional — Auto-detected if inside M3U)</label>
+        <input id="epgUrlInput" type="url" placeholder="https://example.com/epg.xml.gz" class="w-full px-3 py-1.5 rounded-xl bg-white/5 border border-white/15 text-xs text-white" />
+      </div>
       <input id="m3uFileInput" type="file" accept=".m3u,.m3u8,.txt" class="w-full text-xs text-white/70" />
       <div class="flex justify-end gap-2 pt-1">
         <button class="btnCloseModal px-3 py-1.5 rounded-xl bg-white/10 text-xs font-semibold">Cancel</button>
-        <button id="btnFetchM3uUrl" class="px-4 py-1.5 rounded-xl bg-sky-500 text-black font-bold text-xs">Load URL</button>
+        <button id="btnFetchM3uUrl" class="px-4 py-1.5 rounded-xl bg-sky-500 text-black font-bold text-xs">Load Playlist</button>
       </div>
     </div>
   </div>
@@ -111,48 +122,123 @@
   <script>
     const state = {
       channels: [
-        { id: '1', name: 'Angel One (DASH)', group: 'Demo', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: '', referer: '', licenseUrl: '', clearKey: '' },
-        { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: '', referer: '', licenseUrl: '', clearKey: '' }
+        { id: '1', name: 'Angel One (DASH)', group: 'Demo', tvgId: '', logo: '', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: '', referer: '', licenseUrl: '', clearKey: '' },
+        { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', tvgId: '', logo: '', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: '', referer: '', licenseUrl: '', clearKey: '' }
       ],
-      filtered: [], group: 'All', search: '', current: null,
+      filtered: [],
+      group: 'All',
+      search: '',
+      current: null,
       globalUA: localStorage.getItem('tvos_ua') || 'TiviMate/4.7.0 (Linux; Android 13)',
-      epgMap: {}
+      epgMap: {},
+      uiVisible: true
     };
 
     const hasBridge = () => typeof window.AndroidBridge !== 'undefined';
 
     let hideUiTimer = null;
-    function resetUiHideTimer() {
-      showUi();
+
+    function startUiHideTimer() {
       clearTimeout(hideUiTimer);
       hideUiTimer = setTimeout(() => {
         const modalOpen = !document.getElementById('modalM3u').classList.contains('hidden') || !document.getElementById('modalUA').classList.contains('hidden');
         if (!modalOpen) hideUi();
-      }, 3000);
+      }, 4000);
     }
 
     function hideUi() {
+      state.uiVisible = false;
       document.getElementById('appSidebar').classList.add('ui-hidden');
       document.getElementById('topBar').classList.add('ui-hidden');
       document.getElementById('channelDeck').classList.add('ui-hidden');
+      // Enable full-screen wake shield so the next touch only wakes the UI without clicking anything
+      document.getElementById('wakeShield').classList.remove('hidden');
     }
 
     function showUi() {
+      state.uiVisible = true;
       document.getElementById('appSidebar').classList.remove('ui-hidden');
       document.getElementById('topBar').classList.remove('ui-hidden');
       document.getElementById('channelDeck').classList.remove('ui-hidden');
+      startUiHideTimer();
     }
 
-    window.addEventListener('pointerdown', resetUiHideTimer);
-    window.addEventListener('keydown', resetUiHideTimer);
+    // Wake shield consumes the first tap when in fullscreen and reveals the boxes safely
+    const wakeShield = document.getElementById('wakeShield');
+    wakeShield.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showUi();
+      // Keep shield active for 120ms so no underlying button receives a ghost tap
+      setTimeout(() => {
+        if (state.uiVisible) wakeShield.classList.add('hidden');
+      }, 120);
+    });
+
+    // When UI is already visible, interacting with controls resets the 4-second auto-hide timer
+    ['appSidebar', 'channelDeck', 'topBar'].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        if (state.uiVisible) startUiHideTimer();
+      });
+      el.addEventListener('scroll', () => {
+        if (state.uiVisible) startUiHideTimer();
+      }, true);
+    });
 
     window.onNativePlayerState = (s) => {
       document.getElementById('loading').classList.toggle('hidden', s !== 'BUFFERING');
     };
-    window.onNativePlayerError = (msg) => {
+
+    window.onNativePlayerError = () => {
       document.getElementById('loading').classList.add('hidden');
-      console.error("Player Error:", msg);
     };
+
+    window.onSubtitleUpdated = (label) => {
+      const badge = document.getElementById('subBadge');
+      if (label) {
+        badge.textContent = 'SUB: ' + label;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    };
+
+    window.onNativeEpgLoaded = (rawJson) => {
+      try {
+        const parsed = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+        if (parsed && parsed.epg) {
+          state.epgMap = parsed.epg;
+          const count = Object.keys(state.epgMap).length;
+          document.getElementById('epgStatusBadge').textContent = count ? `EPG Active (${count})` : '';
+          updateCurrentChannelEpgBanner();
+          renderDeck();
+        }
+      } catch (e) {}
+    };
+
+    function getChannelEpg(ch) {
+      if (!ch) return null;
+      const idKey = (ch.tvgId || '').toLowerCase();
+      const nameKey = (ch.name || '').toLowerCase();
+      return state.epgMap[idKey] || state.epgMap[nameKey] || null;
+    }
+
+    function updateCurrentChannelEpgBanner() {
+      const epgEl = document.getElementById('nowPlayingEpg');
+      if (!state.current) {
+        epgEl.textContent = 'Live Stream Ready';
+        return;
+      }
+      const info = getChannelEpg(state.current);
+      if (info && info.now) {
+        const nextPart = info.next ? ` • Next: ${info.next}` : '';
+        epgEl.textContent = `Now: ${info.now} (${info.time})${nextPart}`;
+      } else {
+        epgEl.textContent = state.current.group || 'Live TV';
+      }
+    }
 
     window.playChannel = (ch) => {
       if (!ch) return;
@@ -160,10 +246,19 @@
       applyFilters();
       document.getElementById('quickChannelSelect').value = ch.id;
       document.getElementById('nowPlayingTitle').textContent = ch.name;
-      document.getElementById('drmBadge').classList.toggle('hidden', !ch.licenseUrl && !ch.clearKey);
-      document.getElementById('loading').classList.remove('hidden');
 
-      console.log("Selected Channel Object:", JSON.stringify(ch));
+      const logoEl = document.getElementById('nowPlayingLogo');
+      if (ch.logo) {
+        logoEl.src = ch.logo;
+        logoEl.classList.remove('hidden');
+      } else {
+        logoEl.classList.add('hidden');
+      }
+
+      updateCurrentChannelEpgBanner();
+      document.getElementById('drmBadge').classList.toggle('hidden', !ch.licenseUrl && !ch.clearKey);
+      document.getElementById('subBadge').classList.add('hidden');
+      document.getElementById('loading').classList.remove('hidden');
 
       if (hasBridge()) {
         window.AndroidBridge.playNativeStream(
@@ -175,16 +270,23 @@
           ch.clearKey || ''
         );
       }
-      resetUiHideTimer();
+      startUiHideTimer();
     };
 
-    window.parseM3UAndLoad = (rawText, saveUrl = '') => {
-      if (!rawText || !rawText.includes('#EXTINF')) {
-        console.error("M3U load failed or empty text received. Length:", rawText ? rawText.length : 0);
-        return;
+    function triggerEpgLoad(epgUrl) {
+      const clean = (epgUrl || '').trim();
+      if (!clean) return;
+      document.getElementById('epgStatusBadge').textContent = 'Loading EPG...';
+      if (hasBridge() && window.AndroidBridge.loadNativeEpg) {
+        window.AndroidBridge.loadNativeEpg(clean, state.globalUA);
       }
+    }
+
+    window.parseM3UAndLoad = (rawText, saveUrl = '', customEpgUrl = '') => {
+      if (!rawText || !rawText.includes('#EXTINF')) return;
       const lines = rawText.split(/\r?\n/);
       const parsed = [];
+      let detectedEpgUrl = customEpgUrl || '';
       let currentMeta = null;
       let pendingUA = '';
       let pendingReferer = '';
@@ -197,14 +299,25 @@
         let line = lines[i].trim();
         if (!line) continue;
 
-        if (line.startsWith('#EXTINF:')) {
+        if (line.startsWith('#EXTM3U')) {
+          const epgMatch = line.match(/(?:url-tvg|x-tvg-url)="([^"]+)"/i);
+          if (epgMatch && !detectedEpgUrl) {
+            detectedEpgUrl = epgMatch[1].split(',')[0].trim();
+          }
+        } else if (line.startsWith('#EXTINF:')) {
           const commaIdx = line.lastIndexOf(',');
           const name = commaIdx !== -1 ? line.substring(commaIdx + 1).trim() : 'Channel';
           const groupMatch = line.match(/group-title="([^"]+)"/i);
           const idMatch = line.match(/tvg-id="([^"]+)"/i);
+          const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
           const uaAttr = line.match(/user-agent="([^"]+)"/i);
           if (uaAttr) pendingUA = uaAttr[1];
-          currentMeta = { name, group: groupMatch ? groupMatch[1] : 'Live TV', tvgId: idMatch ? idMatch[1] : '' };
+          currentMeta = {
+            name,
+            group: groupMatch ? groupMatch[1] : 'Live TV',
+            tvgId: idMatch ? idMatch[1].trim() : '',
+            logo: logoMatch ? logoMatch[1].trim() : ''
+          };
         } else if (line.toLowerCase().startsWith('#extvlcopt:http-user-agent=')) {
           pendingUA = line.substring(line.indexOf('=') + 1).trim();
         } else if (line.toLowerCase().startsWith('#extvlcopt:http-referrer=') || line.toLowerCase().startsWith('#extvlcopt:http-referer=')) {
@@ -235,7 +348,6 @@
             const pipeIdx = line.indexOf('|');
             streamUrl = line.substring(0, pipeIdx).trim();
             const headerPart = line.substring(pipeIdx + 1).trim();
-            // Case-insensitive pipe parameter parsing (matches TiviMate / OTT Navigator)
             headerPart.split('&').forEach(pair => {
               const eqIdx = pair.indexOf('=');
               if (eqIdx !== -1) {
@@ -260,6 +372,7 @@
             name: currentMeta ? currentMeta.name : `Channel ${parsed.length + 1}`,
             group: currentMeta ? currentMeta.group : 'Live TV',
             tvgId: currentMeta ? currentMeta.tvgId : '',
+            logo: currentMeta ? currentMeta.logo : '',
             url: streamUrl,
             type: streamType,
             userAgent: pendingUA || state.globalUA,
@@ -279,10 +392,14 @@
       }
 
       if (parsed.length !== 0) {
-        console.log("Parsed M3U successfully. Total channels:", parsed.length);
         state.channels = parsed;
         state.group = 'All';
         if (saveUrl) localStorage.setItem('saved_m3u_url', saveUrl);
+        if (detectedEpgUrl) {
+          localStorage.setItem('saved_epg_url', detectedEpgUrl);
+          document.getElementById('epgUrlInput').value = detectedEpgUrl;
+          triggerEpgLoad(detectedEpgUrl);
+        }
         applyFilters();
         document.getElementById('modalM3u').classList.add('hidden');
       }
@@ -291,11 +408,13 @@
     function applyFilters() {
       const q = state.search.toLowerCase();
       state.filtered = state.channels.filter(c => (state.group === 'All' || c.group === state.group) && (!q || c.name.toLowerCase().includes(q)));
-      
+
       const gs = document.getElementById('groupSelect');
       gs.innerHTML = '';
       ['All', ...new Set(state.channels.map(c => c.group))].forEach(g => {
-        const o = document.createElement('option'); o.value = g; o.textContent = g;
+        const o = document.createElement('option');
+        o.value = g;
+        o.textContent = g;
         if (g === state.group) o.selected = true;
         gs.appendChild(o);
       });
@@ -303,7 +422,9 @@
       const qs = document.getElementById('quickChannelSelect');
       qs.innerHTML = '';
       state.filtered.slice(0, 500).forEach((c, i) => {
-        const o = document.createElement('option'); o.value = c.id; o.textContent = `${i + 1}. ${c.name}`;
+        const o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = `${i + 1}. ${c.name}`;
         if (state.current?.id === c.id) o.selected = true;
         qs.appendChild(o);
       });
@@ -315,20 +436,49 @@
       const grid = document.getElementById('channelGrid');
       document.getElementById('channelCountBadge').textContent = state.filtered.length;
       grid.innerHTML = '';
+
       state.filtered.slice(0, 150).forEach(ch => {
         const btn = document.createElement('button');
-        btn.className = `glass rounded-2xl p-2.5 w-44 shrink-0 text-left h-full flex flex-col justify-between ${state.current?.id === ch.id ? 'glass-active border-sky-400' : ''}`;
-        btn.innerHTML = `<div class="text-xs font-bold text-white truncate">${ch.name}</div><div class="text-[10px] text-sky-300 truncate">${ch.group}</div>`;
-        btn.onclick = (e) => {
+        btn.type = 'button';
+        btn.className = `glass rounded-2xl p-2.5 w-48 shrink-0 text-left h-full flex flex-col justify-between ${state.current?.id === ch.id ? 'glass-active border-sky-400' : ''}`;
+
+        const topRow = document.createElement('div');
+        topRow.className = 'flex items-center gap-2 min-w-0';
+
+        if (ch.logo) {
+          const img = document.createElement('img');
+          img.src = ch.logo;
+          img.loading = 'lazy';
+          img.className = 'w-7 h-7 rounded-lg object-contain bg-black/40 p-0.5 shrink-0';
+          img.onerror = function() { this.style.display = 'none'; };
+          topRow.appendChild(img);
+        }
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'text-xs font-bold text-white truncate';
+        titleEl.textContent = ch.name;
+        topRow.appendChild(titleEl);
+
+        const epgInfo = getChannelEpg(ch);
+        const subRow = document.createElement('div');
+        subRow.className = 'text-[10px] text-sky-300 truncate';
+        subRow.textContent = (epgInfo && epgInfo.now) ? epgInfo.now : ch.group;
+
+        btn.appendChild(topRow);
+        btn.appendChild(subRow);
+
+        btn.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (!state.uiVisible) return;
           window.playChannel(ch);
-        };
+        });
+
         grid.appendChild(btn);
       });
     }
 
-    document.getElementById('searchInput').oninput = (e) => { state.search = e.target.value; applyFilters(); resetUiHideTimer(); };
-    document.getElementById('groupSelect').onchange = (e) => { state.group = e.target.value; applyFilters(); resetUiHideTimer(); };
+    document.getElementById('searchInput').oninput = (e) => { state.search = e.target.value; applyFilters(); startUiHideTimer(); };
+    document.getElementById('groupSelect').onchange = (e) => { state.group = e.target.value; applyFilters(); startUiHideTimer(); };
     document.getElementById('quickChannelSelect').onchange = (e) => { const c = state.filtered.find(x => x.id === e.target.value); if (c) window.playChannel(c); };
     document.getElementById('btnOpenModal').onclick = () => { document.getElementById('modalM3u').classList.remove('hidden'); showUi(); };
     document.getElementById('btnOpenUaModal').onclick = () => { document.getElementById('modalUA').classList.remove('hidden'); showUi(); };
@@ -344,15 +494,20 @@
     };
 
     document.getElementById('btnFetchM3uUrl').onclick = async () => {
-      const u = document.getElementById('m3uUrlInput').value.trim(); if (!u) return;
-      console.log("Fetching M3U from:", u);
+      const u = document.getElementById('m3uUrlInput').value.trim();
+      const epgU = document.getElementById('epgUrlInput').value.trim();
+      if (!u) return;
       const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(u, state.globalUA) : await (await fetch(u)).text();
-      window.parseM3UAndLoad(txt, u);
+      window.parseM3UAndLoad(txt, u, epgU);
     };
 
     document.getElementById('m3uFileInput').onchange = (e) => {
-      const f = e.target.files[0]; if (!f) return;
-      const r = new FileReader(); r.onload = (ev) => window.parseM3UAndLoad(ev.target.result); r.readAsText(f);
+      const f = e.target.files[0];
+      const epgU = document.getElementById('epgUrlInput').value.trim();
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = (ev) => window.parseM3UAndLoad(ev.target.result, '', epgU);
+      r.readAsText(f);
     };
 
     document.getElementById('btnPlayPause').onclick = (e) => {
@@ -361,30 +516,32 @@
         const playing = window.AndroidBridge.togglePlayPause();
         document.getElementById('btnPlayPause').textContent = playing ? 'Pause' : 'Play';
       }
-      resetUiHideTimer();
+      startUiHideTimer();
     };
 
-    document.getElementById('videoOverlayContainer').onclick = (e) => {
+    // Tapping empty video space while UI is visible hides the UI into fullscreen
+    document.getElementById('videoOverlayContainer').addEventListener('click', (e) => {
       if (e.target.id === 'videoOverlayContainer' || e.target.id === 'loading') {
-        const sidebar = document.getElementById('appSidebar');
-        if (sidebar.classList.contains('ui-hidden')) {
-          resetUiHideTimer();
-        } else {
+        if (state.uiVisible) {
           hideUi();
         }
       }
-    };
+    });
 
     window.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('activeUaBadge').textContent = 'UA: ' + state.globalUA.split(' ')[0];
       const savedUrl = localStorage.getItem('saved_m3u_url');
+      const savedEpg = localStorage.getItem('saved_epg_url') || '';
+      if (savedEpg) document.getElementById('epgUrlInput').value = savedEpg;
+
       if (savedUrl) {
         document.getElementById('m3uUrlInput').value = savedUrl;
         const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(savedUrl, state.globalUA) : await (await fetch(savedUrl)).text();
-        window.parseM3UAndLoad(txt, savedUrl);
+        window.parseM3UAndLoad(txt, savedUrl, savedEpg);
+      } else {
+        applyFilters();
       }
-      applyFilters();
-      resetUiHideTimer();
+      showUi();
     });
   </script>
 </body>
