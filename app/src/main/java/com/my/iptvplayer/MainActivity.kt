@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
@@ -28,6 +29,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
+import androidx.media3.exoplayer.drm.FrameworkMediaDrm
+import androidx.media3.exoplayer.drm.LocalMediaDrmCallback
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -164,9 +168,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun hexToBase64Url(hex: String): String {
+        val clean = hex.trim().replace("-", "")
+        val bytes = ByteArray(clean.length / 2)
+        for (i in bytes.indices) {
+            val idx = i * 2
+            bytes[i] = clean.substring(idx, idx + 2).toInt(16).toByte()
+        }
+        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+    }
+
+    private fun buildClearKeyJson(clearKeyString: String): ByteArray {
+        val keysArray = mutableListOf<String>()
+        clearKeyString.split(",").forEach { pair ->
+            val parts = pair.trim().split(":")
+            if (parts.size == 2) {
+                val kidB64 = hexToBase64Url(parts[0])
+                val keyB64 = hexToBase64Url(parts[1])
+                keysArray.add("""{"kty":"oct","kid":"$kidB64","k":"$keyB64"}""")
+            }
+        }
+        val json = """{"keys":[${keysArray.joinToString(",")}],"type":"temporary"}"""
+        return json.toByteArray(Charsets.UTF_8)
+    }
+
     inner class AndroidBridge(private val context: Context) {
         @JavascriptInterface
-        fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?, licenseUrl: String?) {
+        fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?, licenseUrl: String?, clearKey: String?) {
             val cleanUrl = url.trim()
             
             if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://") || cleanUrl.contains("<") || cleanUrl.contains(">")) {
@@ -214,7 +242,18 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
 
-                val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(mediaItemBuilder.build())
+                val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+
+                if (!clearKey.isNullOrBlank() && clearKey.contains(":")) {
+                    val clearKeyBytes = buildClearKeyJson(clearKey)
+                    val drmCallback = LocalMediaDrmCallback(clearKeyBytes)
+                    val drmSessionManager = DefaultDrmSessionManager.Builder()
+                        .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+                        .build(drmCallback)
+                    mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
+                }
+
+                val mediaSource = mediaSourceFactory.createMediaSource(mediaItemBuilder.build())
                 player.setMediaSource(mediaSource)
                 player.prepare()
                 player.play()
