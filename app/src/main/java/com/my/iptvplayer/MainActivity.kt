@@ -11,6 +11,7 @@ import android.util.Log
 import android.util.TypedValue
 import android.util.Xml
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.CookieManager
@@ -88,10 +89,10 @@ class MainActivity : AppCompatActivity() {
     private var lastRequest: StreamRequest? = null
     private var tracksOverrideApplied: Boolean = false
 
-    // Global Player Preferences
+    // Preferences
     private var preferredSubMode: String = "ms_en"
     private var preferredAudioMode: String = "ms_en"
-    private var maxVideoHeight: Int = 0 // 0 = Auto, 1080, 720, 480, 360
+    private var maxVideoHeight: Int = 0
     private var bgAudioPlayOnExit: Boolean = false
 
     private val filePickerLauncher = registerForActivityResult(
@@ -170,6 +171,18 @@ class MainActivity : AppCompatActivity() {
                 finishAndRemoveTask()
             }
         }
+    }
+
+    // Handle Bluetooth D-pad / Steering Wheel Up & Down zapping through Favourites
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            val direction = if (keyCode == KeyEvent.KEYCODE_DPAD_UP) -1 else 1
+            webView.post {
+                webView.evaluateJavascript("window.zapFavouriteChannel && window.zapFavouriteChannel($direction);", null)
+            }
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     private fun trustAllCertificates() {
@@ -801,7 +814,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun setPlayerOptions(resHeight: Int, bgAudio: Boolean, fontScalePercent: Int) {
+        fun setPlayerOptions(resHeight: Int, bgAudio: Boolean, fontScalePercent: Int, resizeMode: Int) {
             maxVideoHeight = resHeight
             bgAudioPlayOnExit = bgAudio
             val clampedScale = fontScalePercent.coerceIn(80, 140)
@@ -809,6 +822,11 @@ class MainActivity : AppCompatActivity() {
 
             runOnUiThread {
                 playerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, spSize)
+                playerView.resizeMode = when (resizeMode) {
+                    1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                    else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
                 exoPlayer?.let { player ->
                     val b = player.trackSelectionParameters.buildUpon()
                     if (maxVideoHeight > 0) {
