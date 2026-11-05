@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
 
         playerView = PlayerView(this).apply {
             useController = false
-            resizeMode = AspectRatioFrameLayout.ResizeMode.RESIZE_MODE_FIT
+            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setBackgroundColor(Color.BLACK)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -169,9 +169,10 @@ class MainActivity : AppCompatActivity() {
         fun playNativeStream(url: String, type: String, userAgent: String?, referer: String?, licenseUrl: String?) {
             val cleanUrl = url.trim()
             
-            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://") || cleanUrl.contains("<") || cleanUrl.contains(">")) {
                 runOnUiThread {
-                    webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('Invalid URL protocol');", null)
+                    val msg = "Blocked invalid URL or HTML response: $cleanUrl"
+                    webView.evaluateJavascript("window.onNativePlayerError && window.onNativePlayerError('$msg');", null)
                 }
                 return
             }
@@ -248,13 +249,9 @@ class MainActivity : AppCompatActivity() {
                     setRequestProperty("User-Agent", userAgent ?: "TiviMate/5.3.3 (Linux; Android 13)")
                 }
                 val code = conn.responseCode
-                Log.d("IPTVFetch", "URL: $urlStr returned HTTP code: $code")
-                if (code >= 400) {
-                    return ""
-                }
+                if (code >= 400) return ""
                 conn.inputStream.bufferedReader().use { it.readText() }
             } catch (e: Exception) {
-                Log.e("IPTVFetch", "Error fetching URL: $urlStr", e)
                 ""
             }
         }
