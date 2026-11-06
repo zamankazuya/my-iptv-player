@@ -922,3 +922,55 @@ class MainActivity : AppCompatActivity() {
     }
 }
 // === END OF MAINACTIVITY.KT ===
+class AutoMediaService : android.service.media.MediaBrowserService() {
+    private var mediaSession: android.media.session.MediaSession? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        mediaSession = android.media.session.MediaSession(this, "CoolwalkIPTVSession").apply {
+            val stateBuilder = android.media.session.PlaybackState.Builder()
+                .setActions(
+                    android.media.session.PlaybackState.ACTION_PLAY or
+                    android.media.session.PlaybackState.ACTION_PAUSE or
+                    android.media.session.PlaybackState.ACTION_PLAY_PAUSE or
+                    android.media.session.PlaybackState.ACTION_STOP
+                )
+                .setState(android.media.session.PlaybackState.STATE_PAUSED, 0L, 1.0f)
+            setPlaybackState(stateBuilder.build())
+            isActive = true
+        }
+        sessionToken = mediaSession?.sessionToken
+    }
+
+    override fun onGetRoot(
+        clientPackageName: String,
+        clientUid: Int,
+        rootHints: android.os.Bundle?
+    ): BrowserRoot {
+        return BrowserRoot("root", null)
+    }
+
+    override fun onLoadChildren(
+        parentId: String,
+        result: Result<MutableList<android.media.browse.MediaBrowser.MediaItem>>
+    ) {
+        val items = mutableListOf<android.media.browse.MediaBrowser.MediaItem>()
+        val desc = android.media.MediaDescription.Builder()
+            .setMediaId("live_stream")
+            .setTitle("Coolwalk IPTV Live")
+            .setSubtitle("Active IPTV Stream")
+            .build()
+        items.add(
+            android.media.browse.MediaBrowser.MediaItem(
+                desc,
+                android.media.browse.MediaBrowser.MediaItem.FLAG_PLAYABLE
+            )
+        )
+        result.sendResult(items)
+    }
+
+    override fun onDestroy() {
+        mediaSession?.release()
+        super.onDestroy()
+    }
+}
