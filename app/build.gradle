@@ -3,6 +3,10 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+configurations {
+    aautoSdkAar
+}
+
 android {
     namespace 'com.my.iptvplayer'
     compileSdk 34
@@ -47,6 +51,19 @@ dependencies {
     implementation "androidx.media3:media3-common:$media3_version"
     implementation "androidx.media3:media3-datasource:$media3_version"
 
-    // Android Auto OEM Projection SDK (Enables Full-Screen & Coolwalk Video Projection)
-    implementation 'com.github.martoreto:aauto-sdk:v4.0'
+    // Extract only classes.jar from aauto-sdk AAR to bypass its legacy broken XML resources
+    aautoSdkAar 'com.github.martoreto:aauto-sdk:v4.0@aar'
+    implementation files({
+        def outDir = new File(project.buildDir, "extracted-aauto-sdk")
+        outDir.mkdirs()
+        def outJar = new File(outDir, "aauto-sdk-classes.jar")
+        if (!outJar.exists() || outJar.length() == 0) {
+            configurations.aautoSdkAar.resolve().each { aarFile ->
+                zipTree(aarFile).matching { include 'classes.jar' }.each { jarFile ->
+                    outJar.bytes = jarFile.bytes
+                }
+            }
+        }
+        return outJar
+    })
 }
