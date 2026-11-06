@@ -23,6 +23,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.JsResult
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -213,7 +214,7 @@ class IptvSessionController(
         webView.loadUrl("file:///android_asset/index.html?mode=$modeParam")
     }
 
-    fun getRootView(): View = rootView
+    fun getView(): View = rootView
 
     fun syncFromStore() {
         val cfg = SharedSyncStore.loadConfigJson(context)
@@ -244,11 +245,11 @@ class IptvSessionController(
             .setBufferDurationsMs(15000, 50000, 1000, 2500)
             .build()
 
-        val renderersFactory = DefaultRenderersFactory(context)
+        val renderersFactory = DefaultRenderersFactory(context.applicationContext)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
 
-        exoPlayer = ExoPlayer.Builder(context, renderersFactory)
+        exoPlayer = ExoPlayer.Builder(context.applicationContext, renderersFactory)
             .setLoadControl(loadControl)
             .build()
             .also { player ->
@@ -274,6 +275,12 @@ class IptvSessionController(
                         }
                         webView.post {
                             webView.evaluateJavascript("window.onNativePlayerState && window.onNativePlayerState('$jsState');", null)
+                        }
+                    }
+
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        webView.post {
+                            webView.evaluateJavascript("window.onNativePlayingChanged && window.onNativePlayingChanged($isPlaying);", null)
                         }
                     }
 
@@ -355,85 +362,89 @@ class IptvSessionController(
     }
 
     private fun applyPreferredTracks(player: ExoPlayer, tracks: Tracks) {
-        if (tracks.groups.isEmpty()) return
+        try {
+            if (tracks.groups.isEmpty()) return
 
-        var bestSubGroup: TrackGroup? = null
-        var bestSubIndex = -1
-        var bestSubScore = 0
-        var bestSubLabel = ""
+            var bestSubGroup: TrackGroup? = null
+            var bestSubIndex = -1
+            var bestSubScore = 0
+            var bestSubLabel = ""
 
-        var bestAudioGroup: TrackGroup? = null
-        var bestAudioIndex = -1
-        var bestAudioScore = 0
-        var bestAudioLabel = ""
+            var bestAudioGroup: TrackGroup? = null
+            var bestAudioIndex = -1
+            var bestAudioScore = 0
+            var bestAudioLabel = ""
 
-        for (group in tracks.groups) {
-            val mediaGroup = group.mediaTrackGroup
-            if (group.type == C.TRACK_TYPE_TEXT && preferredSubMode != "off") {
-                for (i in 0 until mediaGroup.length) {
-                    if (!group.isTrackSupported(i)) continue
-                    val fmt = mediaGroup.getFormat(i)
-                    val lang = (fmt.language ?: "").lowercase(Locale.ROOT)
-                    val label = (fmt.label ?: "").lowercase(Locale.ROOT)
-                    val (score, tag) = scoreLanguage(preferredSubMode, isMalayTrack(lang, label), isEnglishTrack(lang, label))
-                    if (score > bestSubScore) {
-                        bestSubScore = score
-                        bestSubGroup = mediaGroup
-                        bestSubIndex = i
-                        bestSubLabel = tag
+            for (group in tracks.groups) {
+                val mediaGroup = group.mediaTrackGroup
+                if (group.type == C.TRACK_TYPE_TEXT && preferredSubMode != "off") {
+                    for (i in 0 until mediaGroup.length) {
+                        if (!group.isTrackSupported(i)) continue
+                        val fmt = mediaGroup.getFormat(i)
+                        val lang = (fmt.language ?: "").lowercase(Locale.ROOT)
+                        val label = (fmt.label ?: "").lowercase(Locale.ROOT)
+                        val (score, tag) = scoreLanguage(preferredSubMode, isMalayTrack(lang, label), isEnglishTrack(lang, label))
+                        if (score > bestSubScore) {
+                            bestSubScore = score
+                            bestSubGroup = mediaGroup
+                            bestSubIndex = i
+                            bestSubLabel = tag
+                        }
+                    }
+                } else if (group.type == C.TRACK_TYPE_AUDIO && preferredAudioMode != "default") {
+                    for (i in 0 until mediaGroup.length) {
+                        if (!group.isTrackSupported(i)) continue
+                        val fmt = mediaGroup.getFormat(i)
+                        val lang = (fmt.language ?: "").lowercase(Locale.ROOT)
+                        val label = (fmt.label ?: "").lowercase(Locale.ROOT)
+                        val (score, tag) = scoreLanguage(preferredAudioMode, isMalayTrack(lang, label), isEnglishTrack(lang, label))
+                        if (score > bestAudioScore) {
+                            bestAudioScore = score
+                            bestAudioGroup = mediaGroup
+                            bestAudioIndex = i
+                            bestAudioLabel = tag
+                        }
                     }
                 }
-            } else if (group.type == C.TRACK_TYPE_AUDIO && preferredAudioMode != "default") {
-                for (i in 0 until mediaGroup.length) {
-                    if (!group.isTrackSupported(i)) continue
-                    val fmt = mediaGroup.getFormat(i)
-                    val lang = (fmt.language ?: "").lowercase(Locale.ROOT)
-                    val label = (fmt.label ?: "").lowercase(Locale.ROOT)
-                    val (score, tag) = scoreLanguage(preferredAudioMode, isMalayTrack(lang, label), isEnglishTrack(lang, label))
-                    if (score > bestAudioScore) {
-                        bestAudioScore = score
-                        bestAudioGroup = mediaGroup
-                        bestAudioIndex = i
-                        bestAudioLabel = tag
+            }
+
+            if (!tracksOverrideApplied) {
+                tracksOverrideApplied = true
+                val paramsBuilder = player.trackSelectionParameters
+                    .buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+
+                if (maxVideoHeight > 0) {
+                    paramsBuilder.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
+                } else {
+                    paramsBuilder.clearVideoSizeConstraints()
+                }
+
+                if (preferredSubMode == "off") {
+                    paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                } else {
+                    paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    if (bestSubGroup != null && bestSubIndex >= 0) {
+                        paramsBuilder.addOverride(TrackSelectionOverride(bestSubGroup, bestSubIndex))
                     }
                 }
-            }
-        }
 
-        if (!tracksOverrideApplied) {
-            tracksOverrideApplied = true
-            val paramsBuilder = player.trackSelectionParameters
-                .buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-
-            if (maxVideoHeight > 0) {
-                paramsBuilder.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
-            } else {
-                paramsBuilder.clearVideoSizeConstraints()
-            }
-
-            if (preferredSubMode == "off") {
-                paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-            } else {
-                paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                if (bestSubGroup != null && bestSubIndex >= 0) {
-                    paramsBuilder.addOverride(TrackSelectionOverride(bestSubGroup, bestSubIndex))
+                if (preferredAudioMode != "default" && bestAudioGroup != null && bestAudioIndex >= 0) {
+                    paramsBuilder.addOverride(TrackSelectionOverride(bestAudioGroup, bestAudioIndex))
                 }
+
+                player.trackSelectionParameters = paramsBuilder.build()
             }
 
-            if (preferredAudioMode != "default" && bestAudioGroup != null && bestAudioIndex >= 0) {
-                paramsBuilder.addOverride(TrackSelectionOverride(bestAudioGroup, bestAudioIndex))
+            val finalSubBadge = if (preferredSubMode == "off") "" else bestSubLabel
+            val finalAudioBadge = if (preferredAudioMode == "default") "" else bestAudioLabel
+
+            webView.post {
+                webView.evaluateJavascript("window.onTrackBadgesUpdated && window.onTrackBadgesUpdated('$finalSubBadge', '$finalAudioBadge');", null)
             }
-
-            player.trackSelectionParameters = paramsBuilder.build()
-        }
-
-        val finalSubBadge = if (preferredSubMode == "off") "" else bestSubLabel
-        val finalAudioBadge = if (preferredAudioMode == "default") "" else bestAudioLabel
-
-        webView.post {
-            webView.evaluateJavascript("window.onTrackBadgesUpdated && window.onTrackBadgesUpdated('$finalSubBadge', '$finalAudioBadge');", null)
+        } catch (e: Exception) {
+            Log.e("IPTV_Tracks", "Track override error", e)
         }
     }
 
@@ -455,19 +466,49 @@ class IptvSessionController(
         webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
         webView.webViewClient = WebViewClient()
         webView.webChromeClient = object : WebChromeClient() {
+            // Prevent native AlertDialog crash on Android Auto CarActivity context
+            override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                val safeMsg = JSONObject.quote(message ?: "")
+                view?.post {
+                    view.evaluateJavascript("window.showToast && window.showToast($safeMsg);", null)
+                }
+                result?.confirm()
+                return true
+            }
+
+            override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                result?.confirm()
+                return true
+            }
+
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
-                val intent = fileChooserParams?.createIntent() ?: return false
+                if (isCarInstance || onPickFileRequest == null) {
+                    filePathCallback?.onReceiveValue(null)
+                    webView?.post {
+                        webView.evaluateJavascript(
+                            "window.showToast && window.showToast('Select local files on your Phone — it will sync to Car automatically!');",
+                            null
+                        )
+                    }
+                    return true
+                }
+                val intent = fileChooserParams?.createIntent()
+                if (intent == null) {
+                    filePathCallback?.onReceiveValue(null)
+                    return true
+                }
                 MainActivity.pendingFileCallback?.onReceiveValue(null)
                 MainActivity.pendingFileCallback = filePathCallback
-                val launched = onPickFileRequest?.invoke(intent) ?: false
+                val launched = onPickFileRequest.invoke(intent)
                 if (!launched) {
+                    MainActivity.pendingFileCallback?.onReceiveValue(null)
                     MainActivity.pendingFileCallback = null
                 }
-                return launched
+                return true
             }
         }
     }
@@ -707,94 +748,98 @@ class IptvSessionController(
             }
 
             mainHandler.post {
-                val player = exoPlayer ?: return@post
-                player.stop()
-                player.clearMediaItems()
+                try {
+                    val player = exoPlayer ?: return@post
+                    player.stop()
+                    player.clearMediaItems()
 
-                val subLangs = when (preferredSubMode) {
-                    "en_ms" -> arrayOf("en", "eng", "ms", "may", "msa", "zsm")
-                    "ms" -> arrayOf("ms", "may", "msa", "zsm")
-                    "en" -> arrayOf("en", "eng")
-                    else -> arrayOf("ms", "may", "msa", "zsm", "en", "eng")
-                }
+                    val subLangs = when (preferredSubMode) {
+                        "en_ms" -> arrayOf("en", "eng", "ms", "may", "msa", "zsm")
+                        "ms" -> arrayOf("ms", "may", "msa", "zsm")
+                        "en" -> arrayOf("en", "eng")
+                        else -> arrayOf("ms", "may", "msa", "zsm", "en", "eng")
+                    }
 
-                val audLangs = when (preferredAudioMode) {
-                    "en_ms" -> arrayOf("en", "eng", "ms", "may", "msa", "zsm")
-                    "ms" -> arrayOf("ms", "may", "msa", "zsm")
-                    "en" -> arrayOf("en", "eng")
-                    else -> arrayOf("ms", "may", "msa", "zsm", "en", "eng")
-                }
+                    val audLangs = when (preferredAudioMode) {
+                        "en_ms" -> arrayOf("en", "eng", "ms", "may", "msa", "zsm")
+                        "ms" -> arrayOf("ms", "may", "msa", "zsm")
+                        "en" -> arrayOf("en", "eng")
+                        else -> arrayOf("ms", "may", "msa", "zsm", "en", "eng")
+                    }
 
-                val paramBuilder = player.trackSelectionParameters
-                    .buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, preferredSubMode == "off")
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                    .setPreferredTextLanguages(*subLangs)
-                    .setPreferredAudioLanguages(*audLangs)
+                    val paramBuilder = player.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, preferredSubMode == "off")
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                        .setPreferredTextLanguages(*subLangs)
+                        .setPreferredAudioLanguages(*audLangs)
 
-                if (maxVideoHeight > 0) {
-                    paramBuilder.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
-                } else {
-                    paramBuilder.clearVideoSizeConstraints()
-                }
+                    if (maxVideoHeight > 0) {
+                        paramBuilder.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
+                    } else {
+                        paramBuilder.clearVideoSizeConstraints()
+                    }
 
-                player.trackSelectionParameters = paramBuilder.build()
+                    player.trackSelectionParameters = paramBuilder.build()
 
-                val dataSourceFactory = DefaultHttpDataSource.Factory()
-                    .setUserAgent(req.userAgent)
-                    .setDefaultRequestProperties(headers)
-                    .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(25000)
-                    .setReadTimeoutMs(25000)
+                    val dataSourceFactory = DefaultHttpDataSource.Factory()
+                        .setUserAgent(req.userAgent)
+                        .setDefaultRequestProperties(headers)
+                        .setAllowCrossProtocolRedirects(true)
+                        .setConnectTimeoutMs(25000)
+                        .setReadTimeoutMs(25000)
 
-                val mediaItemBuilder = MediaItem.Builder()
-                    .setUri(Uri.parse(req.url))
+                    val mediaItemBuilder = MediaItem.Builder()
+                        .setUri(Uri.parse(req.url))
 
-                when (req.format) {
-                    "mpd" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
-                    "hls" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-                }
+                    when (req.format) {
+                        "mpd" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+                        "hls" -> mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+                    }
 
-                val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+                    val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
-                if (clearKeyHttpUrl.isNotEmpty()) {
-                    val drmCallback = HttpMediaDrmCallback(clearKeyHttpUrl, dataSourceFactory)
-                    headers.forEach { (k, v) -> drmCallback.setKeyRequestProperty(k, v) }
-                    val drmSessionManager = DefaultDrmSessionManager.Builder()
-                        .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
-                        .setMultiSession(true)
-                        .setPlayClearSamplesWithoutKeys(true)
-                        .build(drmCallback)
-                    mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
-                } else if (resolvedClearKey.isNotEmpty() && (resolvedClearKey.contains(":") || resolvedClearKey.startsWith("{"))) {
-                    try {
-                        val clearKeyBytes = buildClearKeyJson(resolvedClearKey)
-                        val drmCallback = LocalMediaDrmCallback(clearKeyBytes)
+                    if (clearKeyHttpUrl.isNotEmpty()) {
+                        val drmCallback = HttpMediaDrmCallback(clearKeyHttpUrl, dataSourceFactory)
+                        headers.forEach { (k, v) -> drmCallback.setKeyRequestProperty(k, v) }
                         val drmSessionManager = DefaultDrmSessionManager.Builder()
                             .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
                             .setMultiSession(true)
                             .setPlayClearSamplesWithoutKeys(true)
                             .build(drmCallback)
                         mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
-                    } catch (e: Exception) {
-                        Log.e("IPTV_Native", "ClearKey error: ${e.message}")
+                    } else if (resolvedClearKey.isNotEmpty() && (resolvedClearKey.contains(":") || resolvedClearKey.startsWith("{"))) {
+                        try {
+                            val clearKeyBytes = buildClearKeyJson(resolvedClearKey)
+                            val drmCallback = LocalMediaDrmCallback(clearKeyBytes)
+                            val drmSessionManager = DefaultDrmSessionManager.Builder()
+                                .setUuidAndExoMediaDrmProvider(C.CLEARKEY_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+                                .setMultiSession(true)
+                                .setPlayClearSamplesWithoutKeys(true)
+                                .build(drmCallback)
+                            mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
+                        } catch (e: Exception) {
+                            Log.e("IPTV_Native", "ClearKey error: ${e.message}")
+                        }
+                    } else if (req.licenseUrl.startsWith("http")) {
+                        val cleanLicUrl = req.licenseUrl.split("|")[0].trim()
+                        mediaItemBuilder.setDrmConfiguration(
+                            MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
+                                .setLicenseUri(cleanLicUrl)
+                                .setLicenseRequestHeaders(headers)
+                                .setMultiSession(true)
+                                .build()
+                        )
                     }
-                } else if (req.licenseUrl.startsWith("http")) {
-                    val cleanLicUrl = req.licenseUrl.split("|")[0].trim()
-                    mediaItemBuilder.setDrmConfiguration(
-                        MediaItem.DrmConfiguration.Builder(C.WIDEVINE_UUID)
-                            .setLicenseUri(cleanLicUrl)
-                            .setLicenseRequestHeaders(headers)
-                            .setMultiSession(true)
-                            .build()
-                    )
-                }
 
-                val mediaSource = mediaSourceFactory.createMediaSource(mediaItemBuilder.build())
-                player.setMediaSource(mediaSource)
-                player.prepare()
-                player.play()
+                    val mediaSource = mediaSourceFactory.createMediaSource(mediaItemBuilder.build())
+                    player.setMediaSource(mediaSource)
+                    player.prepare()
+                    player.play()
+                } catch (e: Exception) {
+                    Log.e("IPTV_Native", "Playback start error", e)
+                }
             }
         }
     }
@@ -839,6 +884,38 @@ class IptvSessionController(
         }
 
         @JavascriptInterface
+        fun fetchM3uAsync(urlStr: String, userAgent: String?, epgUrl: String?) {
+            val cleanUrl = urlStr.trim()
+            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) return
+            val ua = if (!userAgent.isNullOrBlank()) userAgent.trim() else "TiviMate/4.7.0 (Linux; Android 13)"
+            val cleanEpg = epgUrl?.trim() ?: ""
+
+            thread {
+                val txt = fetchUrlTextWithHeaders(cleanUrl, mapOf("User-Agent" to ua, "Accept" to "*/*"))
+                if (txt.contains("#EXTINF")) {
+                    SharedSyncStore.savePlaylistCache(context, txt, null)
+                    val safeUrl = JSONObject.quote(cleanUrl)
+                    val safeEpg = JSONObject.quote(cleanEpg)
+                    for (ctrl in SharedSyncStore.activeControllers) {
+                        ctrl.webView.post {
+                            ctrl.webView.evaluateJavascript(
+                                "window.onAsyncM3uReady && window.onAsyncM3uReady($safeUrl, $safeEpg);",
+                                null
+                            )
+                        }
+                    }
+                } else {
+                    webView.post {
+                        webView.evaluateJavascript(
+                            "window.showToast && window.showToast('Failed to load M3U URL or playlist empty');",
+                            null
+                        )
+                    }
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun playNativeStream(
             url: String,
             type: String,
@@ -877,9 +954,13 @@ class IptvSessionController(
             preferredSubMode = if (!subMode.isNullOrBlank()) subMode.trim() else "ms_en"
             preferredAudioMode = if (!audioMode.isNullOrBlank()) audioMode.trim() else "ms_en"
             mainHandler.post {
-                exoPlayer?.let { player ->
-                    tracksOverrideApplied = false
-                    applyPreferredTracks(player, player.currentTracks)
+                try {
+                    exoPlayer?.let { player ->
+                        tracksOverrideApplied = false
+                        applyPreferredTracks(player, player.currentTracks)
+                    }
+                } catch (e: Exception) {
+                    Log.e("IPTV_Bridge", "Language pref error", e)
                 }
             }
         }
@@ -892,20 +973,24 @@ class IptvSessionController(
             val spSize = 18f * (clampedScale / 100f)
 
             mainHandler.post {
-                playerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, spSize)
-                playerView.resizeMode = when (resizeMode) {
-                    1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                    2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                }
-                exoPlayer?.let { player ->
-                    val b = player.trackSelectionParameters.buildUpon()
-                    if (maxVideoHeight > 0) {
-                        b.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
-                    } else {
-                        b.clearVideoSizeConstraints()
+                try {
+                    playerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, spSize)
+                    playerView.resizeMode = when (resizeMode) {
+                        1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                        else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                     }
-                    player.trackSelectionParameters = b.build()
+                    exoPlayer?.let { player ->
+                        val b = player.trackSelectionParameters.buildUpon()
+                        if (maxVideoHeight > 0) {
+                            b.setMaxVideoSize(Int.MAX_VALUE, maxVideoHeight)
+                        } else {
+                            b.clearVideoSizeConstraints()
+                        }
+                        player.trackSelectionParameters = b.build()
+                    }
+                } catch (e: Exception) {
+                    Log.e("IPTV_Bridge", "Player options error", e)
                 }
             }
         }
@@ -927,15 +1012,25 @@ class IptvSessionController(
         }
 
         @JavascriptInterface
-        fun togglePlayPause(): Boolean {
-            var playing = false
+        fun togglePlayPause() {
             mainHandler.post {
-                exoPlayer?.let {
-                    if (it.isPlaying) it.pause() else it.play()
-                    playing = it.isPlaying
+                try {
+                    exoPlayer?.let { player ->
+                        if (player.isPlaying) {
+                            player.pause()
+                        } else {
+                            if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
+                                player.prepare()
+                            }
+                            player.play()
+                        }
+                        val nowPlaying = player.isPlaying
+                        webView.evaluateJavascript("window.onNativePlayingChanged && window.onNativePlayingChanged($nowPlaying);", null)
+                    }
+                } catch (e: Exception) {
+                    Log.e("IPTV_Bridge", "Toggle play/pause error", e)
                 }
             }
-            return playing
         }
 
         @JavascriptInterface
@@ -1005,7 +1100,7 @@ class MainActivity : AppCompatActivity() {
             }
         )
         sessionController = ctrl
-        setContentView(ctrl.getRootView())
+        setContentView(ctrl.getView())
     }
 
     override fun onResume() {
