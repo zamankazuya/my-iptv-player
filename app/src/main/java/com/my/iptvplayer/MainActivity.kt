@@ -133,7 +133,7 @@ class IptvSessionController(
     private val onPickFileRequest: ((Intent) -> Boolean)?,
     private val onVoiceRequest: ((String) -> Unit)?
 ) {
-    val rootView: FrameLayout
+    private val rootView: FrameLayout
     private val playerView: PlayerView
     private var exoPlayer: ExoPlayer? = null
     val webView: WebView
