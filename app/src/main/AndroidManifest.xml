@@ -5,8 +5,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application
         android:allowBackup="true"
@@ -20,34 +18,27 @@
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
 
+        <!-- Phone Setup & Player Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
             android:launchMode="singleTask">
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.CAR_MODE" />
-                <category android:name="android.intent.category.CAR_DOCK" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="androidx.car.app.action.RENDER" />
-                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
-        <!-- Required so Android Auto Customize Launcher detects the app -->
+        <!-- Android Auto Car Projection Service (Renders UI & Video on Car Player) -->
         <service
-            android:name=".AutoMediaService"
+            android:name=".CarService"
             android:label="Coolwalk IPTV"
             android:icon="@android:drawable/ic_media_play"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:exported="true">
             <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="com.google.android.gms.car.category.CATEGORY_PROJECTION" />
             </intent-filter>
         </service>
 
