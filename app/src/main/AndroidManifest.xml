@@ -30,7 +30,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Android Auto Car Projection Service (Renders UI & Video on Car Player) -->
+        <!-- Android Auto Car Projection Service -->
         <service
             android:name=".CarService"
             android:label="Coolwalk IPTV"
