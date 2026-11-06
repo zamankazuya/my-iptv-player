@@ -18,7 +18,7 @@ public class CarService extends CarActivityService {
         public void onCreate(Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
             controller = new IptvSessionController(this, true, null, null);
-            setContentView(controller.getRootView());
+            setContentView(controller.getView());
         }
 
         @Override
