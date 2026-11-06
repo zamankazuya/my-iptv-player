@@ -76,10 +76,6 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
 
-/**
- * Shared real-time sync hub between the Phone instance (MainActivity)
- * and the Android Auto Car instance (MainCarActivity).
- */
 object SharedSyncStore {
     private const val PREF_NAME = "coolwalk_shared_sync"
     private const val KEY_CONFIG_JSON = "config_json"
