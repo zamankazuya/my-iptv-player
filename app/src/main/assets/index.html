@@ -29,7 +29,7 @@
 </head>
 <body class="flex flex-col h-full w-full p-2 gap-1.5 bg-transparent relative">
 
-  <!-- FULLSCREEN WAKE SHIELD -->
+  <!-- FULLSCREEN WAKE SHIELD: First tap in fullscreen reveals UI without clicking underlying buttons -->
   <div id="wakeShield" class="hidden fixed inset-0 z-40 bg-transparent cursor-pointer"></div>
 
   <!-- MAIN VIDEO OVERLAY AREA -->
@@ -49,6 +49,7 @@
           <div class="min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
               <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Select a Channel</div>
+              <span id="instanceBadge" class="text-[9px] px-1.5 py-0.5 rounded bg-white/15 text-white/80 font-semibold">SYNC</span>
               <span id="resBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-white/20 text-white font-bold">AUTO</span>
               <span id="drmBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300 font-bold">DRM</span>
               <span id="subBadge" class="hidden text-[9px] px-1.5 py-0.5 rounded bg-sky-500/30 text-sky-300 font-bold">SUB</span>
@@ -59,7 +60,7 @@
         </div>
       </div>
 
-      <!-- TOP-RIGHT ICON STACK (Search -> Microphone Voice -> Favourite Star -> Channel Jump TV -> Settings Gear) -->
+      <!-- TOP-RIGHT ICON STACK (Search -> Voice Mic -> Favourite Star -> Channel Jump TV -> Settings Gear) -->
       <div id="rightActionStack" class="absolute top-1 right-1 flex flex-col gap-2 z-20 transition-opacity duration-250">
         <!-- 1. Search Icon -->
         <button id="btnOpenSearch" type="button" title="Search Channel" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
@@ -95,7 +96,7 @@
     <div id="channelGrid" class="flex items-center gap-2 overflow-x-auto no-scrollbar w-full h-full"></div>
   </section>
 
-  <!-- MODALS -->
+  <!-- 1. SEARCH MODAL -->
   <div id="modalSearch" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 flex flex-col gap-3 max-h-[85dvh]">
       <div class="flex items-center justify-between"><h2 class="text-xs font-bold text-white">Search Channel</h2><button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button></div>
@@ -104,6 +105,7 @@
     </div>
   </div>
 
+  <!-- 2. CHANNEL JUMP MODAL -->
   <div id="modalChannelJump" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 flex flex-col gap-3 max-h-[85dvh]">
       <div class="flex items-center justify-between"><h2 class="text-xs font-bold text-white">Channel Jump (<span id="totalChannelCount">0</span>)</h2><button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button></div>
@@ -112,6 +114,7 @@
     </div>
   </div>
 
+  <!-- 3. FAVOURITE SELECTOR MODAL -->
   <div id="modalFavSelector" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 flex flex-col gap-3 max-h-[85dvh]">
       <div class="flex items-center justify-between"><h2 class="text-xs font-bold text-white">Select Favourite Channels (<span id="favCountBadge">0</span>)</h2><button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button></div>
@@ -121,11 +124,11 @@
     </div>
   </div>
 
-  <!-- UNIFIED SETTINGS MODAL -->
+  <!-- 4. UNIFIED SETTINGS MODAL (Phone & Car Synced) -->
   <div id="modalSettings" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3">
     <div class="glass rounded-2xl max-w-lg w-full p-4 flex flex-col gap-3 max-h-[92dvh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-white/10 pb-2">
-        <div><h2 class="text-sm font-bold text-white">Player & Interface Settings</h2><span id="epgStatusBadge" class="text-[10px] theme-text">Configure playlist, stream, and appearance</span></div>
+        <div><h2 class="text-sm font-bold text-white">Player & Interface Settings</h2><span id="epgStatusBadge" class="text-[10px] theme-text">Synced live between Phone and Car Player</span></div>
         <button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button>
       </div>
 
@@ -247,7 +250,7 @@
 
       <div class="flex justify-end gap-2 pt-1">
         <button class="btnCloseModal px-3 py-1.5 rounded-xl bg-white/10 text-xs font-semibold">Cancel</button>
-        <button id="btnSaveAllSettings" class="px-5 py-1.5 rounded-xl theme-btn font-bold text-xs">Save & Apply</button>
+        <button id="btnSaveAllSettings" class="px-5 py-1.5 rounded-xl theme-btn font-bold text-xs">Save & Sync</button>
       </div>
     </div>
   </div>
@@ -263,37 +266,115 @@
       titanium: { accent: '#e2e8f0', soft: 'rgba(226, 232, 240, 0.25)', surface: 'rgba(24, 26, 30, 0.92)', border: 'rgba(226, 232, 240, 0.25)' }
     };
 
-    const savedFavs = (() => {
-      try {
-        return JSON.parse(localStorage.getItem('tvos_favorites') || '[]');
-      } catch (e) {
-        return [];
-      }
-    })();
+    const hasBridge = () => typeof window.AndroidBridge !== 'undefined';
 
     const state = {
       channels: [
         { id: '1', name: 'Angel One (DASH)', group: 'Demo', tvgId: '', logo: '', url: 'https://storage.googleapis.com/shaka-demo-assets/angel-one/dash.mpd', type: 'mpd', userAgent: '', referer: '', licenseUrl: '', clearKey: '' },
         { id: '2', name: 'Apple BipBop (HLS)', group: 'Demo', tvgId: '', logo: '', url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8', type: 'hls', userAgent: '', referer: '', licenseUrl: '', clearKey: '' }
       ],
-      favorites: new Set(savedFavs),
+      favorites: new Set(),
       group: 'All',
       current: null,
-      globalUA: localStorage.getItem('tvos_ua') || 'TiviMate/4.7.0 (Linux; Android 13)',
-      subPref: localStorage.getItem('tvos_sub_pref') || 'ms_en',
-      audioPref: localStorage.getItem('tvos_audio_pref') || 'ms_en',
-      resPref: parseInt(localStorage.getItem('tvos_res_pref') || '0', 10),
-      resizeMode: parseInt(localStorage.getItem('tvos_resize_mode') || '0', 10),
-      autoPlayLast: localStorage.getItem('tvos_autoplay_last') !== 'false',
-      bgAudioExit: localStorage.getItem('tvos_bgaudio_exit') === 'true',
-      hideTimeoutMs: parseInt(localStorage.getItem('tvos_hide_timeout') || '5000', 10),
-      fontScale: parseInt(localStorage.getItem('tvos_font_scale') || '100', 10),
-      themeScheme: localStorage.getItem('tvos_theme_scheme') || 'ocean',
+      savedM3uUrl: '',
+      savedEpgUrl: '',
+      lastChannelName: '',
+      lastChannelUrl: '',
+      globalUA: 'TiviMate/4.7.0 (Linux; Android 13)',
+      subPref: 'ms_en',
+      audioPref: 'ms_en',
+      resPref: 0,
+      resizeMode: 0,
+      autoPlayLast: true,
+      bgAudioExit: false,
+      hideTimeoutMs: 5000,
+      fontScale: 100,
+      themeScheme: 'ocean',
       epgMap: {},
       uiVisible: true
     };
 
-    const hasBridge = () => typeof window.AndroidBridge !== 'undefined';
+    // Saves config to native SharedSyncStore so changes on Phone immediately reflect in Car Player
+    function persistSharedState() {
+      const payload = {
+        favorites: [...state.favorites],
+        saved_m3u_url: state.savedM3uUrl,
+        saved_epg_url: state.savedEpgUrl,
+        last_channel_name: state.lastChannelName,
+        last_channel_url: state.lastChannelUrl,
+        tvos_ua: state.globalUA,
+        tvos_sub_pref: state.subPref,
+        tvos_audio_pref: state.audioPref,
+        tvos_res_pref: state.resPref,
+        tvos_resize_mode: state.resizeMode,
+        tvos_autoplay_last: state.autoPlayLast,
+        tvos_bgaudio_exit: state.bgAudioExit,
+        tvos_hide_timeout: state.hideTimeoutMs,
+        tvos_font_scale: state.fontScale,
+        tvos_theme_scheme: state.themeScheme
+      };
+      const jsonStr = JSON.stringify(payload);
+      localStorage.setItem('coolwalk_shared_backup', jsonStr);
+      if (hasBridge() && window.AndroidBridge.saveSharedConfig) {
+        window.AndroidBridge.saveSharedConfig(jsonStr);
+      }
+    }
+
+    function applyConfigObject(d, isLiveSync = false) {
+      if (!d || typeof d !== 'object') return;
+      const prevChannelName = state.lastChannelName;
+
+      if (Array.isArray(d.favorites)) state.favorites = new Set(d.favorites);
+      if (d.saved_m3u_url !== undefined) state.savedM3uUrl = d.saved_m3u_url;
+      if (d.saved_epg_url !== undefined) state.savedEpgUrl = d.saved_epg_url;
+      if (d.last_channel_name !== undefined) state.lastChannelName = d.last_channel_name;
+      if (d.last_channel_url !== undefined) state.lastChannelUrl = d.last_channel_url;
+      if (d.tvos_ua) state.globalUA = d.tvos_ua;
+      if (d.tvos_sub_pref) state.subPref = d.tvos_sub_pref;
+      if (d.tvos_audio_pref) state.audioPref = d.tvos_audio_pref;
+      if (d.tvos_res_pref !== undefined) state.resPref = parseInt(d.tvos_res_pref, 10) || 0;
+      if (d.tvos_resize_mode !== undefined) state.resizeMode = parseInt(d.tvos_resize_mode, 10) || 0;
+      if (d.tvos_autoplay_last !== undefined) state.autoPlayLast = Boolean(d.tvos_autoplay_last);
+      if (d.tvos_bgaudio_exit !== undefined) state.bgAudioExit = Boolean(d.tvos_bgaudio_exit);
+      if (d.tvos_hide_timeout !== undefined) state.hideTimeoutMs = parseInt(d.tvos_hide_timeout, 10) || 5000;
+      if (d.tvos_font_scale !== undefined) state.fontScale = parseInt(d.tvos_font_scale, 10) || 100;
+      if (d.tvos_theme_scheme) state.themeScheme = d.tvos_theme_scheme;
+
+      document.getElementById('m3uUrlInput').value = state.savedM3uUrl || '';
+      document.getElementById('epgUrlInput').value = state.savedEpgUrl || '';
+
+      applyVisualSettings();
+      if (hasBridge() && window.AndroidBridge.setLanguagePreferences) {
+        window.AndroidBridge.setLanguagePreferences(state.subPref, state.audioPref);
+      }
+
+      if (isLiveSync) {
+        if (hasBridge() && window.AndroidBridge.loadPlaylistCache) {
+          const cachedM3u = window.AndroidBridge.loadPlaylistCache();
+          if (cachedM3u && cachedM3u.includes('#EXTINF')) {
+            window.parseM3UAndLoad(cachedM3u, state.savedM3uUrl, state.savedEpgUrl, false);
+          }
+        }
+        updateStarButtonState();
+        renderFavoritesDeck();
+
+        // If a channel was selected on the phone or no stream is playing yet on the car, sync playback
+        if (!state.current || (state.lastChannelName && state.lastChannelName !== prevChannelName)) {
+          const target = state.channels.find(c => favKey(c) === state.lastChannelName || c.url === state.lastChannelUrl);
+          if (target && (!state.current || state.current.id !== target.id)) {
+            window.playChannel(target, false);
+          }
+        }
+      }
+    }
+
+    // Triggered automatically when the other instance (Phone or Car) saves any setting, M3U, or Favourite
+    window.onSharedConfigUpdated = (rawJson) => {
+      try {
+        const parsed = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+        applyConfigObject(parsed, true);
+      } catch (e) {}
+    };
 
     function applyVisualSettings() {
       const scheme = COLOR_SCHEMES[state.themeScheme] || COLOR_SCHEMES.ocean;
@@ -317,7 +398,7 @@
     }
 
     function saveFavorites() {
-      localStorage.setItem('tvos_favorites', JSON.stringify([...state.favorites]));
+      persistSharedState();
       updateStarButtonState();
       renderFavoritesDeck();
     }
@@ -421,19 +502,19 @@
       window.playChannel(favs[idx]);
     };
 
-    // Malay & English Voice Intent Recognizer (Gemini / Speech Bridge)
+    // Malay & English Voice Intent Recognizer
     window.executeVoiceCommand = (cmdText) => {
       const text = (cmdText || '').toLowerCase().trim();
       showUi();
       if (text.includes('stop') || text.includes('pause') || text.includes('tutup') || text.includes('henti')) {
-        document.getElementById('btnPlayPause').click();
+        if (hasBridge()) window.AndroidBridge.togglePlayPause();
         return "Stream paused.";
       }
-      if (text.includes('start') || text.includes('resume') || text.includes('buka') || (text.includes('play') && !text.includes('channel'))) {
+      if (text.includes('start') || text.includes('resume') || (text.includes('buka') && !text.includes('saluran')) || (text.includes('play') && !text.includes('channel'))) {
         if (state.current) window.playChannel(state.current);
         return "Resumed playback.";
       }
-      const switchKeywords = ['switch to', 'play channel', 'change channel', 'buka saluran', 'tukar ke', 'channel'];
+      const switchKeywords = ['switch to', 'play channel', 'change channel', 'buka saluran', 'tukar ke', 'buka', 'channel'];
       let query = text;
       const matchedKeyword = switchKeywords.find(kw => text.includes(kw));
       if (matchedKeyword) {
@@ -520,11 +601,12 @@
       }
     }
 
-    window.playChannel = (ch) => {
+    window.playChannel = (ch, broadcastSync = true) => {
       if (!ch) return;
       state.current = ch;
-      localStorage.setItem('tvos_last_channel_name', favKey(ch));
-      localStorage.setItem('tvos_last_channel_url', ch.url || '');
+      state.lastChannelName = favKey(ch);
+      state.lastChannelUrl = ch.url || '';
+      if (broadcastSync) persistSharedState();
 
       document.getElementById('nowPlayingTitle').textContent = ch.name;
 
@@ -819,14 +901,18 @@
 
     function tryAutoPlayChannel() {
       if (!state.autoPlayLast || state.channels.length === 0) return;
-      const lastName = localStorage.getItem('tvos_last_channel_name') || '';
-      const lastUrl = localStorage.getItem('tvos_last_channel_url') || '';
+      const lastName = state.lastChannelName || '';
+      const lastUrl = state.lastChannelUrl || '';
       const match = state.channels.find(c => (lastName && favKey(c) === lastName) || (lastUrl && c.url === lastUrl)) || state.channels[0];
-      if (match) window.playChannel(match);
+      if (match) window.playChannel(match, false);
     }
 
-    window.parseM3UAndLoad = (rawText, saveUrl = '', customEpgUrl = '') => {
+    window.parseM3UAndLoad = (rawText, saveUrl = '', customEpgUrl = '', saveToCache = true) => {
       if (!rawText || !rawText.includes('#EXTINF')) return;
+      if (saveToCache && hasBridge() && window.AndroidBridge.savePlaylistCache) {
+        window.AndroidBridge.savePlaylistCache(rawText);
+      }
+
       const lines = rawText.split(/\r?\n/);
       const parsed = [];
       let detectedEpgUrl = customEpgUrl || '';
@@ -937,12 +1023,13 @@
       if (parsed.length !== 0) {
         state.channels = parsed;
         state.group = 'All';
-        if (saveUrl) localStorage.setItem('saved_m3u_url', saveUrl);
+        if (saveUrl) state.savedM3uUrl = saveUrl;
         if (detectedEpgUrl) {
-          localStorage.setItem('saved_epg_url', detectedEpgUrl);
+          state.savedEpgUrl = detectedEpgUrl;
           document.getElementById('epgUrlInput').value = detectedEpgUrl;
           triggerEpgLoad(detectedEpgUrl);
         }
+        if (saveToCache) persistSharedState();
         renderFavoritesDeck();
       }
     };
@@ -984,6 +1071,8 @@
       e.stopPropagation();
       if (!state.uiVisible) return;
       closeAllModals();
+      document.getElementById('m3uUrlInput').value = state.savedM3uUrl || '';
+      document.getElementById('epgUrlInput').value = state.savedEpgUrl || '';
       document.getElementById('uaPresetSelect').value = state.globalUA;
       document.getElementById('subPrefSelect').value = state.subPref;
       document.getElementById('audioPrefSelect').value = state.audioPref;
@@ -1003,22 +1092,9 @@
     });
 
     document.getElementById('btnExportSettings').addEventListener('click', () => {
-      const backupData = {
-        favorites: [...state.favorites],
-        saved_m3u_url: localStorage.getItem('saved_m3u_url') || '',
-        saved_epg_url: localStorage.getItem('saved_epg_url') || '',
-        tvos_ua: state.globalUA,
-        tvos_sub_pref: state.subPref,
-        tvos_audio_pref: state.audioPref,
-        tvos_res_pref: state.resPref,
-        tvos_resize_mode: state.resizeMode,
-        tvos_autoplay_last: state.autoPlayLast,
-        tvos_bgaudio_exit: state.bgAudioExit,
-        tvos_hide_timeout: state.hideTimeoutMs,
-        tvos_font_scale: state.fontScale,
-        tvos_theme_scheme: state.themeScheme
-      };
-      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      persistSharedState();
+      const raw = localStorage.getItem('coolwalk_shared_backup') || '{}';
+      const blob = new Blob([raw], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1033,25 +1109,9 @@
       r.onload = (ev) => {
         try {
           const d = JSON.parse(ev.target.result);
-          if (d.favorites) {
-            state.favorites = new Set(d.favorites);
-            localStorage.setItem('tvos_favorites', JSON.stringify(d.favorites));
-          }
-          if (d.saved_m3u_url) localStorage.setItem('saved_m3u_url', d.saved_m3u_url);
-          if (d.saved_epg_url) localStorage.setItem('saved_epg_url', d.saved_epg_url);
-          if (d.tvos_ua) { state.globalUA = d.tvos_ua; localStorage.setItem('tvos_ua', d.tvos_ua); }
-          if (d.tvos_sub_pref) { state.subPref = d.tvos_sub_pref; localStorage.setItem('tvos_sub_pref', d.tvos_sub_pref); }
-          if (d.tvos_audio_pref) { state.audioPref = d.tvos_audio_pref; localStorage.setItem('tvos_audio_pref', d.tvos_audio_pref); }
-          if (d.tvos_res_pref !== undefined) { state.resPref = d.tvos_res_pref; localStorage.setItem('tvos_res_pref', String(d.tvos_res_pref)); }
-          if (d.tvos_resize_mode !== undefined) { state.resizeMode = d.tvos_resize_mode; localStorage.setItem('tvos_resize_mode', String(d.tvos_resize_mode)); }
-          if (d.tvos_autoplay_last !== undefined) { state.autoPlayLast = d.tvos_autoplay_last; localStorage.setItem('tvos_autoplay_last', String(d.tvos_autoplay_last)); }
-          if (d.tvos_bgaudio_exit !== undefined) { state.bgAudioExit = d.tvos_bgaudio_exit; localStorage.setItem('tvos_bgaudio_exit', String(d.tvos_bgaudio_exit)); }
-          if (d.tvos_hide_timeout !== undefined) { state.hideTimeoutMs = d.tvos_hide_timeout; localStorage.setItem('tvos_hide_timeout', String(d.tvos_hide_timeout)); }
-          if (d.tvos_font_scale !== undefined) { state.fontScale = d.tvos_font_scale; localStorage.setItem('tvos_font_scale', String(d.tvos_font_scale)); }
-          if (d.tvos_theme_scheme) { state.themeScheme = d.tvos_theme_scheme; localStorage.setItem('tvos_theme_scheme', d.tvos_theme_scheme); }
-
-          applyVisualSettings();
-          alert("Configuration restored successfully! Reloading...");
+          applyConfigObject(d, false);
+          persistSharedState();
+          alert("Configuration restored and synced to Car!");
           location.reload();
         } catch (err) {
           alert("Invalid backup JSON file.");
@@ -1078,6 +1138,9 @@
       const m3uUrl = document.getElementById('m3uUrlInput').value.trim();
       const epgUrl = document.getElementById('epgUrlInput').value.trim();
 
+      const prevM3u = state.savedM3uUrl;
+      const prevEpg = state.savedEpgUrl;
+
       state.globalUA = uaVal;
       state.subPref = subVal;
       state.audioPref = audVal;
@@ -1088,33 +1151,22 @@
       state.hideTimeoutMs = timeoutVal;
       state.fontScale = fontVal;
       state.themeScheme = themeVal;
-
-      localStorage.setItem('tvos_ua', uaVal);
-      localStorage.setItem('tvos_sub_pref', subVal);
-      localStorage.setItem('tvos_audio_pref', audVal);
-      localStorage.setItem('tvos_res_pref', String(resVal));
-      localStorage.setItem('tvos_resize_mode', String(resizeVal));
-      localStorage.setItem('tvos_autoplay_last', String(autoPlayVal));
-      localStorage.setItem('tvos_bgaudio_exit', String(bgAudioVal));
-      localStorage.setItem('tvos_hide_timeout', String(timeoutVal));
-      localStorage.setItem('tvos_font_scale', String(fontVal));
-      localStorage.setItem('tvos_theme_scheme', themeVal);
+      state.savedM3uUrl = m3uUrl;
+      state.savedEpgUrl = epgUrl;
 
       applyVisualSettings();
-
       if (hasBridge() && window.AndroidBridge.setLanguagePreferences) {
         window.AndroidBridge.setLanguagePreferences(subVal, audVal);
       }
 
-      const prevSavedM3u = localStorage.getItem('saved_m3u_url') || '';
-      if (m3uUrl && (m3uUrl !== prevSavedM3u || state.channels.length <= 2)) {
+      if (m3uUrl && (m3uUrl !== prevM3u || state.channels.length <= 2)) {
         const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(m3uUrl, state.globalUA) : await (await fetch(m3uUrl)).text();
-        window.parseM3UAndLoad(txt, m3uUrl, epgUrl);
-      } else if (epgUrl && epgUrl !== (localStorage.getItem('saved_epg_url') || '')) {
-        localStorage.setItem('saved_epg_url', epgUrl);
+        window.parseM3UAndLoad(txt, m3uUrl, epgUrl, true);
+      } else if (epgUrl && epgUrl !== prevEpg) {
         triggerEpgLoad(epgUrl);
       }
 
+      persistSharedState();
       closeAllModals();
     });
 
@@ -1124,7 +1176,7 @@
       if (!f) return;
       const r = new FileReader();
       r.onload = (ev) => {
-        window.parseM3UAndLoad(ev.target.result, '', epgU);
+        window.parseM3UAndLoad(ev.target.result, '', epgU, true);
         closeAllModals();
         tryAutoPlayChannel();
       };
@@ -1133,27 +1185,36 @@
 
     document.getElementById('videoOverlayContainer').addEventListener('click', (e) => {
       if (e.target.id === 'videoOverlayContainer' || e.target.id === 'loading') {
-        if (state.uiVisible) {
-          hideUi();
-        }
+        if (state.uiVisible) hideUi();
       }
     });
 
     window.addEventListener('DOMContentLoaded', async () => {
-      applyVisualSettings();
+      const isCar = (hasBridge() && window.AndroidBridge.isCarMode && window.AndroidBridge.isCarMode()) || location.search.includes('mode=car');
+      document.getElementById('instanceBadge').textContent = isCar ? 'CAR' : 'PHONE';
 
-      if (hasBridge() && window.AndroidBridge.setLanguagePreferences) {
-        window.AndroidBridge.setLanguagePreferences(state.subPref, state.audioPref);
+      let rawShared = '{}';
+      if (hasBridge() && window.AndroidBridge.loadSharedConfig) {
+        rawShared = window.AndroidBridge.loadSharedConfig();
+      } else {
+        rawShared = localStorage.getItem('coolwalk_shared_backup') || '{}';
+      }
+      try {
+        applyConfigObject(JSON.parse(rawShared), false);
+      } catch (e) {}
+
+      let loadedFromCache = false;
+      if (hasBridge() && window.AndroidBridge.loadPlaylistCache) {
+        const cachedTxt = window.AndroidBridge.loadPlaylistCache();
+        if (cachedTxt && cachedTxt.includes('#EXTINF')) {
+          window.parseM3UAndLoad(cachedTxt, state.savedM3uUrl, state.savedEpgUrl, false);
+          loadedFromCache = true;
+        }
       }
 
-      const savedUrl = localStorage.getItem('saved_m3u_url') || '';
-      const savedEpg = localStorage.getItem('saved_epg_url') || '';
-      if (savedEpg) document.getElementById('epgUrlInput').value = savedEpg;
-
-      if (savedUrl) {
-        document.getElementById('m3uUrlInput').value = savedUrl;
-        const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(savedUrl, state.globalUA) : await (await fetch(savedUrl)).text();
-        window.parseM3UAndLoad(txt, savedUrl, savedEpg);
+      if (!loadedFromCache && state.savedM3uUrl) {
+        const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(state.savedM3uUrl, state.globalUA) : await (await fetch(state.savedM3uUrl)).text();
+        window.parseM3UAndLoad(txt, state.savedM3uUrl, state.savedEpgUrl, true);
       } else {
         renderFavoritesDeck();
       }
