@@ -20,20 +20,26 @@
     .theme-btn { background: var(--accent) !important; color: #090d16 !important; }
     .theme-border:hover { border-color: var(--accent) !important; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     .ui-hidden { opacity: 0 !important; pointer-events: none !important; }
     .radio-dot { width: 18px; height: 18px; border-radius: 9999px; border: 2px solid rgba(255,255,255,0.45); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .radio-dot-active { border-color: var(--accent); background: var(--accent-soft); }
     .radio-dot-active::after { content: ''; width: 8px; height: 8px; border-radius: 9999px; background: var(--accent); }
+    .custom-select-btn { width: 100%; padding: 0.45rem 0.65rem; border-radius: 0.75rem; background: #141824; border: 1px solid rgba(255,255,255,0.16); font-size: 0.75rem; color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; text-align: left; }
+    .custom-select-btn:active { border-color: var(--accent); transform: scale(0.99); }
     input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
   </style>
 </head>
 <body class="flex flex-col h-full w-full p-2 gap-1.5 bg-transparent relative">
 
+  <!-- TOAST NOTIFICATION BANNER (Replaces native alert() to avoid CarActivity crash) -->
+  <div id="toastBanner" class="hidden fixed top-3 left-1/2 -translate-x-1/2 z-[80] glass px-4 py-2 rounded-2xl text-xs font-bold text-white shadow-2xl border border-sky-400/40 pointer-events-none"></div>
+
   <!-- FULLSCREEN WAKE SHIELD -->
   <div id="wakeShield" class="hidden fixed inset-0 z-40 bg-transparent cursor-pointer"></div>
 
-  <!-- MAIN VIDEO OVERLAY AREA -->
-  <main class="relative flex-1 w-full overflow-hidden border-0 outline-none">
+  <!-- MAIN VIDEO OVERLAY AREA (min-h-0 prevents overlapping the bottom Favourites bar) -->
+  <main class="relative flex-1 min-h-0 w-full overflow-hidden border-0 outline-none">
     <section id="videoOverlayContainer" class="relative w-full h-full overflow-hidden bg-transparent border-0 outline-none flex items-center justify-center cursor-pointer">
 
       <!-- Buffering Spinner -->
@@ -42,10 +48,10 @@
         <div id="loadingText" class="text-xs text-white font-semibold">Tuning Stream...</div>
       </div>
 
-      <!-- TOP-LEFT INFO BAR -->
-      <div id="topBar" class="absolute top-1 left-1 right-20 p-2 flex items-center justify-between bg-transparent border-0 outline-none z-20 transition-opacity duration-250 pointer-events-none">
-        <div class="flex items-center gap-3 min-w-0 pointer-events-auto">
-          <img id="nowPlayingLogo" src="" alt="" class="hidden w-12 h-12 rounded-xl object-contain bg-black/60 p-1 border border-white/15 shrink-0" onerror="this.classList.add('hidden')" />
+      <!-- TOP-LEFT INFO BAR (Scrollable if content is tall so it never overlaps Favourites bar) -->
+      <div id="topBar" class="absolute top-1 left-1 right-16 max-h-full overflow-y-auto no-scrollbar p-1.5 flex items-start justify-between bg-transparent border-0 outline-none z-20 transition-opacity duration-250 pointer-events-none">
+        <div class="flex items-center gap-2.5 min-w-0 pointer-events-auto">
+          <img id="nowPlayingLogo" src="" alt="" class="hidden w-11 h-11 rounded-xl object-contain bg-black/60 p-1 border border-white/15 shrink-0" onerror="this.classList.add('hidden')" />
           <div class="min-w-0">
             <div class="flex items-center gap-1.5 flex-wrap">
               <div id="nowPlayingTitle" class="text-sm font-bold text-white truncate max-w-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">Select a Channel</div>
@@ -60,25 +66,48 @@
         </div>
       </div>
 
-      <!-- TOP-RIGHT ICON STACK (Search -> Voice Mic -> Favourite Star -> Channel Jump TV -> Settings Gear) -->
-      <div id="rightActionStack" class="absolute top-1 right-1 flex flex-col gap-2 z-20 transition-opacity duration-250">
-        <button id="btnOpenSearch" type="button" title="Search Channel" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
+      <!-- CENTER BIG TRANSPORT CONTROLS (PREV / PLAY-PAUSE / NEXT) -->
+      <div id="centerControls" class="absolute inset-0 flex items-center justify-center z-20 pointer-events-none transition-opacity duration-250">
+        <div class="flex items-center gap-6 pointer-events-auto">
+          <!-- Previous Channel Button -->
+          <button id="btnPrevChannel" type="button" title="Previous Channel" class="w-12 h-12 rounded-full glass theme-border flex items-center justify-center text-white active:scale-90 shadow-xl">
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"></path></svg>
+          </button>
+
+          <!-- Big Play / Pause Button -->
+          <button id="btnPlayPauseCenter" type="button" title="Play / Pause" class="w-16 h-16 rounded-full glass theme-border flex items-center justify-center text-white active:scale-90 shadow-2xl">
+            <!-- Pause Icon (shown while playing) -->
+            <svg id="iconPauseSvg" class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+            <!-- Play Icon (shown while paused) -->
+            <svg id="iconPlaySvg" class="hidden w-8 h-8 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+          </button>
+
+          <!-- Next Channel Button -->
+          <button id="btnNextChannel" type="button" title="Next Channel" class="w-12 h-12 rounded-full glass theme-border flex items-center justify-center text-white active:scale-90 shadow-xl">
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- SIDE ICON STACK (Constrained with top-1 bottom-1 & overflow-y-auto so it scrolls instead of overlapping Favourites bar) -->
+      <div id="rightActionStack" class="absolute top-1 bottom-1 right-1 flex flex-col gap-2 z-20 overflow-y-auto no-scrollbar py-0.5 px-0.5 transition-opacity duration-250 pointer-events-auto" style="touch-action: pan-y;">
+        <button id="btnOpenSearch" type="button" title="Search Channel" class="w-11 h-11 shrink-0 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path stroke-linecap="round" d="M20 20l-3.5-3.5"></path></svg>
         </button>
 
-        <button id="btnVoiceCommand" type="button" title="Voice Control (Malay/English)" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-sky-300 active:scale-95 shadow-lg">
+        <button id="btnVoiceCommand" type="button" title="Voice Control (Malay/English)" class="w-11 h-11 shrink-0 rounded-2xl glass theme-border flex items-center justify-center text-sky-300 active:scale-95 shadow-lg">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v1a7 7 0 01-14 0v-1M12 18.5V22M8 22h8"></path></svg>
         </button>
 
-        <button id="btnToggleCurrentFav" type="button" title="Favourite" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white/80 active:scale-95 shadow-lg">
+        <button id="btnToggleCurrentFav" type="button" title="Favourite" class="w-11 h-11 shrink-0 rounded-2xl glass theme-border flex items-center justify-center text-white/80 active:scale-95 shadow-lg">
           <svg id="starIconSvg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.563.563 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path></svg>
         </button>
 
-        <button id="btnOpenChannelJump" type="button" title="Channel Jump" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
+        <button id="btnOpenChannelJump" type="button" title="Channel Jump" class="w-11 h-11 shrink-0 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="2" ry="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M17 2l-5 4-5-4"></path></svg>
         </button>
 
-        <button id="btnOpenSettings" type="button" title="Settings" class="w-11 h-11 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
+        <button id="btnOpenSettings" type="button" title="Settings" class="w-11 h-11 shrink-0 rounded-2xl glass theme-border flex items-center justify-center text-white active:scale-95 shadow-lg">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><circle cx="12" cy="12" r="3"></circle></svg>
         </button>
       </div>
@@ -90,6 +119,36 @@
   <section id="channelDeck" class="glass rounded-2xl p-1.5 h-24 shrink-0 flex items-center transition-opacity duration-250 z-20">
     <div id="channelGrid" class="flex items-center gap-2 overflow-x-auto no-scrollbar w-full h-full"></div>
   </section>
+
+  <!-- WELCOME POPUP MODAL (Shown when no M3U links are detected) -->
+  <div id="modalWelcome" class="hidden fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4">
+    <div class="glass rounded-2xl max-w-md w-full p-5 flex flex-col gap-3.5 border border-sky-400/30 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-base" style="background: var(--accent-soft); color: var(--accent);">📺</div>
+          <div>
+            <h2 class="text-sm font-bold text-white">Welcome to Coolwalk IPTV</h2>
+            <p class="text-[11px] theme-text">No M3U playlist link detected yet</p>
+          </div>
+        </div>
+        <button id="btnCloseWelcomeX" type="button" class="text-xs text-white/60 hover:text-white px-2 py-1">✕</button>
+      </div>
+
+      <p class="text-xs text-white/80 leading-relaxed">
+        Add your <strong>M3U Playlist URL</strong> or upload an <strong>.m3u file</strong> in Settings. Any playlist, favourite channels, or settings configured on your <strong>Phone</strong> or <strong>Android Auto</strong> will sync automatically across both screens!
+      </p>
+
+      <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-black/35 border border-white/10 cursor-pointer">
+        <input id="chkDontShowWelcome" type="checkbox" class="w-4 h-4 rounded" />
+        <span class="text-xs text-white/90 font-medium">Don't show this again</span>
+      </label>
+
+      <div class="flex justify-end gap-2 pt-1">
+        <button id="btnDismissWelcome" type="button" class="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white">Later (Demo)</button>
+        <button id="btnWelcomeOpenSettings" type="button" class="px-4 py-2 rounded-xl theme-btn text-xs font-bold">Open Settings Now</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 1. SEARCH MODAL -->
   <div id="modalSearch" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
@@ -104,7 +163,13 @@
   <div id="modalChannelJump" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
     <div class="glass rounded-2xl max-w-md w-full p-4 flex flex-col gap-3 max-h-[85dvh]">
       <div class="flex items-center justify-between"><h2 class="text-xs font-bold text-white">Channel Jump (<span id="totalChannelCount">0</span>)</h2><button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button></div>
-      <div><label class="block text-[10px] text-white/50 mb-1">Category Group</label><select id="groupSelect" class="w-full px-3 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white focus:outline-none"></select></div>
+      <div>
+        <label class="block text-[10px] text-white/50 mb-1">Category Group</label>
+        <button id="btnGroupSelect" type="button" class="custom-select-btn">
+          <span id="lblGroupSelect" class="truncate">All</span>
+          <span class="text-white/50 text-[10px]">▼</span>
+        </button>
+      </div>
       <div id="jumpChannelList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-64"></div>
     </div>
   </div>
@@ -119,11 +184,11 @@
     </div>
   </div>
 
-  <!-- 4. UNIFIED SETTINGS MODAL -->
+  <!-- 4. UNIFIED SETTINGS MODAL (Crash-Free Custom Dropdowns for Phone & Android Auto) -->
   <div id="modalSettings" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3">
     <div class="glass rounded-2xl max-w-lg w-full p-4 flex flex-col gap-3 max-h-[92dvh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-white/10 pb-2">
-        <div><h2 class="text-sm font-bold text-white">Player & Interface Settings</h2><span id="epgStatusBadge" class="text-[10px] theme-text">Synced live between Phone and Car Player</span></div>
+        <div><h2 class="text-sm font-bold text-white">Player & Interface Settings</h2><span id="epgStatusBadge" class="text-[10px] theme-text">Synced live between Phone and Android Auto</span></div>
         <button class="btnCloseModal text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button>
       </div>
 
@@ -162,44 +227,21 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
             <label class="block text-[10px] text-white/70 mb-1">Channel Resolution</label>
-            <select id="resPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="0">Auto (Default)</option>
-              <option value="1080">1080p Full HD</option>
-              <option value="720">720p HD</option>
-              <option value="480">480p SD</option>
-              <option value="360">360p Data Saver</option>
-            </select>
+            <button id="btnResPref" type="button" class="custom-select-btn"><span id="lblResPref" class="truncate">Auto (Default)</span><span class="text-white/50 text-[10px]">▼</span></button>
           </div>
           <div>
             <label class="block text-[10px] text-white/70 mb-1">User-Agent Spoofing</label>
-            <select id="uaPresetSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="TiviMate/4.7.0 (Linux; Android 13)">TiviMate/4.7.0 (Android 13)</option>
-              <option value="OTT Navigator/1.6.9.4 (Linux; Android 13)">OTT Navigator/1.6.9.4</option>
-              <option value="TiviMate/5.1.0 (Linux; Android 14)">TiviMate/5.1.0 (Android 14)</option>
-              <option value="Dalvik/2.1.0 (Linux; U; Android 13; Shield Android TV Build/RQ1A.210105.003)">Android TV Dalvik</option>
-            </select>
+            <button id="btnUaPreset" type="button" class="custom-select-btn"><span id="lblUaPreset" class="truncate">TiviMate/4.7.0 (Android 13)</span><span class="text-white/50 text-[10px]">▼</span></button>
           </div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
             <label class="block text-[10px] text-white/70 mb-1">Preferred Subtitle</label>
-            <select id="subPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="ms_en">Malay 1st, English 2nd</option>
-              <option value="en_ms">English 1st, Malay 2nd</option>
-              <option value="ms">Malay Only</option>
-              <option value="en">English Only</option>
-              <option value="off">Subtitles Off</option>
-            </select>
+            <button id="btnSubPref" type="button" class="custom-select-btn"><span id="lblSubPref" class="truncate">Malay 1st, English 2nd</span><span class="text-white/50 text-[10px]">▼</span></button>
           </div>
           <div>
             <label class="block text-[10px] text-white/70 mb-1">Audio Track Selector</label>
-            <select id="audioPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="ms_en">Malay 1st, English 2nd</option>
-              <option value="en_ms">English 1st, Malay 2nd</option>
-              <option value="ms">Malay Audio Preferred</option>
-              <option value="en">English Audio Preferred</option>
-              <option value="default">Channel Default Audio</option>
-            </select>
+            <button id="btnAudioPref" type="button" class="custom-select-btn"><span id="lblAudioPref" class="truncate">Malay 1st, English 2nd</span><span class="text-white/50 text-[10px]">▼</span></button>
           </div>
         </div>
       </div>
@@ -208,33 +250,16 @@
         <div class="text-[11px] font-bold theme-text uppercase tracking-wider">3. Interface, Aspect Ratio & Appearance</div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div>
-            <label class="block text-[10px] text-white/70 mb-1">Color Scheme (7 Combos)</label>
-            <select id="themeSchemeSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="ocean">1. Ocean Sky & Slate</option>
-              <option value="emerald">2. Emerald & Forest</option>
-              <option value="sunset">3. Sunset Gold & Crimson</option>
-              <option value="royal">4. Royal Violet & Indigo</option>
-              <option value="cyber">5. Cyber Cyan & Magenta</option>
-              <option value="ruby">6. Ruby Rose & Obsidian</option>
-              <option value="titanium">7. Titanium & Graphite</option>
-            </select>
+            <label class="block text-[10px] text-white/70 mb-1">Color Scheme</label>
+            <button id="btnThemeScheme" type="button" class="custom-select-btn"><span id="lblThemeScheme" class="truncate">1. Ocean Sky & Slate</span><span class="text-white/50 text-[10px]">▼</span></button>
           </div>
           <div>
             <label class="block text-[10px] text-white/70 mb-1">Aspect Ratio Mode</label>
-            <select id="aspectRatioSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="0">Fit (Default)</option>
-              <option value="1">Zoom (Crop to Fill)</option>
-              <option value="2">Fill (Stretch)</option>
-            </select>
+            <button id="btnAspectRatio" type="button" class="custom-select-btn"><span id="lblAspectRatio" class="truncate">Fit (Default)</span><span class="text-white/50 text-[10px]">▼</span></button>
           </div>
           <div>
             <label class="block text-[10px] text-white/70 mb-1">Fullscreen Timeout</label>
-            <select id="timeoutPrefSelect" class="w-full px-2.5 py-2 rounded-xl bg-[#141824] border border-white/15 text-xs text-white">
-              <option value="3000">3 Seconds</option>
-              <option value="5000">5 Seconds</option>
-              <option value="10000">10 Seconds</option>
-              <option value="15000">15 Seconds</option>
-            </select>
+            <button id="btnTimeoutPref" type="button" class="custom-select-btn"><span id="lblTimeoutPref" class="truncate">5 Seconds</span><span class="text-white/50 text-[10px]">▼</span></button>
           </div>
         </div>
         <div>
@@ -245,8 +270,19 @@
 
       <div class="flex justify-end gap-2 pt-1">
         <button class="btnCloseModal px-3 py-1.5 rounded-xl bg-white/10 text-xs font-semibold">Cancel</button>
-        <button id="btnSaveAllSettings" class="px-5 py-1.5 rounded-xl theme-btn font-bold text-xs">Save & Sync</button>
+        <button id="btnSaveAllSettings" type="button" class="px-5 py-1.5 rounded-xl theme-btn font-bold text-xs">Save & Sync</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 5. CUSTOM GLASS OPTION PICKER MODAL (Replaces native Android <select> AlertDialog) -->
+  <div id="modalCustomSelect" class="hidden fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+    <div class="glass rounded-2xl max-w-sm w-full p-4 flex flex-col gap-2.5 max-h-[80dvh] shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/10 pb-2">
+        <h3 id="customSelectTitle" class="text-xs font-bold text-white">Select Option</h3>
+        <button id="btnCloseCustomSelect" type="button" class="text-xs text-white/60 hover:text-white px-2 py-0.5">✕</button>
+      </div>
+      <div id="customSelectList" class="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-60"></div>
     </div>
   </div>
 
@@ -261,7 +297,66 @@
       titanium: { accent: '#e2e8f0', soft: 'rgba(226, 232, 240, 0.25)', surface: 'rgba(24, 26, 30, 0.92)', border: 'rgba(226, 232, 240, 0.25)' }
     };
 
+    const SELECT_OPTIONS = {
+      resPref: [
+        { value: '0', label: 'Auto (Default)' },
+        { value: '1080', label: '1080p Full HD' },
+        { value: '720', label: '720p HD' },
+        { value: '480', label: '480p SD' },
+        { value: '360', label: '360p Data Saver' }
+      ],
+      uaPreset: [
+        { value: 'TiviMate/4.7.0 (Linux; Android 13)', label: 'TiviMate/4.7.0 (Android 13)' },
+        { value: 'OTT Navigator/1.6.9.4 (Linux; Android 13)', label: 'OTT Navigator/1.6.9.4' },
+        { value: 'TiviMate/5.1.0 (Linux; Android 14)', label: 'TiviMate/5.1.0 (Android 14)' },
+        { value: 'Dalvik/2.1.0 (Linux; U; Android 13; Shield Android TV Build/RQ1A.210105.003)', label: 'Android TV Dalvik' }
+      ],
+      subPref: [
+        { value: 'ms_en', label: 'Malay 1st, English 2nd' },
+        { value: 'en_ms', label: 'English 1st, Malay 2nd' },
+        { value: 'ms', label: 'Malay Only' },
+        { value: 'en', label: 'English Only' },
+        { value: 'off', label: 'Subtitles Off' }
+      ],
+      audioPref: [
+        { value: 'ms_en', label: 'Malay 1st, English 2nd' },
+        { value: 'en_ms', label: 'English 1st, Malay 2nd' },
+        { value: 'ms', label: 'Malay Audio Preferred' },
+        { value: 'en', label: 'English Audio Preferred' },
+        { value: 'default', label: 'Channel Default Audio' }
+      ],
+      themeScheme: [
+        { value: 'ocean', label: '1. Ocean Sky & Slate' },
+        { value: 'emerald', label: '2. Emerald & Forest' },
+        { value: 'sunset', label: '3. Sunset Gold & Crimson' },
+        { value: 'royal', label: '4. Royal Violet & Indigo' },
+        { value: 'cyber', label: '5. Cyber Cyan & Magenta' },
+        { value: 'ruby', label: '6. Ruby Rose & Obsidian' },
+        { value: 'titanium', label: '7. Titanium & Graphite' }
+      ],
+      aspectRatio: [
+        { value: '0', label: 'Fit (Default)' },
+        { value: '1', label: 'Zoom (Crop to Fill)' },
+        { value: '2', label: 'Fill (Stretch)' }
+      ],
+      timeoutPref: [
+        { value: '3000', label: '3 Seconds' },
+        { value: '5000', label: '5 Seconds' },
+        { value: '10000', label: '10 Seconds' },
+        { value: '15000', label: '15 Seconds' }
+      ]
+    };
+
     const hasBridge = () => typeof window.AndroidBridge !== 'undefined';
+
+    let toastTimer = null;
+    window.showToast = (msg) => {
+      const el = document.getElementById('toastBanner');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), 2800);
+    };
 
     const state = {
       channels: [
@@ -271,6 +366,7 @@
       favorites: new Set(),
       group: 'All',
       current: null,
+      isPlaying: true,
       savedM3uUrl: '',
       savedEpgUrl: '',
       lastChannelName: '',
@@ -285,9 +381,55 @@
       hideTimeoutMs: 5000,
       fontScale: 100,
       themeScheme: 'ocean',
+      hideWelcomePopup: false,
       epgMap: {},
       uiVisible: true
     };
+
+    // Temporary form state while Settings modal is open
+    const draftSettings = {
+      resPref: '0',
+      globalUA: 'TiviMate/4.7.0 (Linux; Android 13)',
+      subPref: 'ms_en',
+      audioPref: 'ms_en',
+      themeScheme: 'ocean',
+      resizeMode: '0',
+      hideTimeoutMs: '5000'
+    };
+
+    function getOptionLabel(list, val) {
+      const found = list.find(o => String(o.value) === String(val));
+      return found ? found.label : String(val);
+    }
+
+    function openCustomSelectModal(title, optionsList, currentValue, onPicked) {
+      document.getElementById('customSelectTitle').textContent = title;
+      const listEl = document.getElementById('customSelectList');
+      listEl.innerHTML = '';
+
+      optionsList.forEach(opt => {
+        const active = String(opt.value) === String(currentValue);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `w-full flex items-center justify-between p-2.5 rounded-xl border text-left text-xs font-semibold ${active ? 'glass-active text-white' : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10'}`;
+        btn.innerHTML = `
+          <span class="truncate pr-2">${opt.label}</span>
+          <div class="radio-dot ${active ? 'radio-dot-active' : ''}"></div>
+        `;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          document.getElementById('modalCustomSelect').classList.add('hidden');
+          onPicked(opt.value, opt.label);
+        });
+        listEl.appendChild(btn);
+      });
+
+      document.getElementById('modalCustomSelect').classList.remove('hidden');
+    }
+
+    document.getElementById('btnCloseCustomSelect').addEventListener('click', () => {
+      document.getElementById('modalCustomSelect').classList.add('hidden');
+    });
 
     function persistSharedState() {
       const payload = {
@@ -305,7 +447,8 @@
         tvos_bgaudio_exit: state.bgAudioExit,
         tvos_hide_timeout: state.hideTimeoutMs,
         tvos_font_scale: state.fontScale,
-        tvos_theme_scheme: state.themeScheme
+        tvos_theme_scheme: state.themeScheme,
+        hide_welcome_popup: state.hideWelcomePopup
       };
       const jsonStr = JSON.stringify(payload);
       localStorage.setItem('coolwalk_shared_backup', jsonStr);
@@ -333,6 +476,7 @@
       if (d.tvos_hide_timeout !== undefined) state.hideTimeoutMs = parseInt(d.tvos_hide_timeout, 10) || 5000;
       if (d.tvos_font_scale !== undefined) state.fontScale = parseInt(d.tvos_font_scale, 10) || 100;
       if (d.tvos_theme_scheme) state.themeScheme = d.tvos_theme_scheme;
+      if (d.hide_welcome_popup !== undefined) state.hideWelcomePopup = Boolean(d.hide_welcome_popup);
 
       document.getElementById('m3uUrlInput').value = state.savedM3uUrl || '';
       document.getElementById('epgUrlInput').value = state.savedEpgUrl || '';
@@ -347,6 +491,7 @@
           const cachedM3u = window.AndroidBridge.loadPlaylistCache();
           if (cachedM3u && cachedM3u.includes('#EXTINF')) {
             window.parseM3UAndLoad(cachedM3u, state.savedM3uUrl, state.savedEpgUrl, false);
+            document.getElementById('modalWelcome').classList.add('hidden');
           }
         }
         updateStarButtonState();
@@ -366,6 +511,18 @@
         const parsed = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
         applyConfigObject(parsed, true);
       } catch (e) {}
+    };
+
+    window.onAsyncM3uReady = (savedUrl, savedEpg) => {
+      if (hasBridge() && window.AndroidBridge.loadPlaylistCache) {
+        const cachedTxt = window.AndroidBridge.loadPlaylistCache();
+        if (cachedTxt && cachedTxt.includes('#EXTINF')) {
+          window.parseM3UAndLoad(cachedTxt, savedUrl, savedEpg, false);
+          document.getElementById('modalWelcome').classList.add('hidden');
+          window.showToast(`Loaded ${state.channels.length} channels!`);
+          tryAutoPlayChannel();
+        }
+      }
     };
 
     function applyVisualSettings() {
@@ -421,14 +578,24 @@
       }
     }
 
+    function updatePlayPauseIcons(playing) {
+      state.isPlaying = Boolean(playing);
+      document.getElementById('iconPauseSvg').classList.toggle('hidden', !state.isPlaying);
+      document.getElementById('iconPlaySvg').classList.toggle('hidden', state.isPlaying);
+    }
+
+    window.onNativePlayingChanged = (playing) => {
+      updatePlayPauseIcons(playing);
+    };
+
     function anyModalOpen() {
-      return ['modalSearch', 'modalChannelJump', 'modalFavSelector', 'modalSettings'].some(
+      return ['modalWelcome', 'modalSearch', 'modalChannelJump', 'modalFavSelector', 'modalSettings', 'modalCustomSelect'].some(
         id => !document.getElementById(id).classList.contains('hidden')
       );
     }
 
     function closeAllModals() {
-      ['modalSearch', 'modalChannelJump', 'modalFavSelector', 'modalSettings'].forEach(
+      ['modalSearch', 'modalChannelJump', 'modalFavSelector', 'modalSettings', 'modalCustomSelect'].forEach(
         id => document.getElementById(id).classList.add('hidden')
       );
       startUiHideTimer();
@@ -446,6 +613,7 @@
     function hideUi() {
       state.uiVisible = false;
       document.getElementById('topBar').classList.add('ui-hidden');
+      document.getElementById('centerControls').classList.add('ui-hidden');
       document.getElementById('rightActionStack').classList.add('ui-hidden');
       document.getElementById('channelDeck').classList.add('ui-hidden');
       document.getElementById('wakeShield').classList.remove('hidden');
@@ -454,6 +622,7 @@
     function showUi() {
       state.uiVisible = true;
       document.getElementById('topBar').classList.remove('ui-hidden');
+      document.getElementById('centerControls').classList.remove('ui-hidden');
       document.getElementById('rightActionStack').classList.remove('ui-hidden');
       document.getElementById('channelDeck').classList.remove('ui-hidden');
       startUiHideTimer();
@@ -469,7 +638,7 @@
       }, 150);
     });
 
-    ['rightActionStack', 'channelDeck', 'topBar'].forEach(id => {
+    ['rightActionStack', 'channelDeck', 'topBar', 'centerControls'].forEach(id => {
       const el = document.getElementById(id);
       el.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
@@ -480,18 +649,50 @@
       }, true);
     });
 
-    window.zapFavouriteChannel = (direction) => {
+    // Smart Prev / Next Channel Cycling: Favourites first, fallback to All Channels
+    function cycleChannel(direction) {
       const favs = state.channels.filter(ch => isChannelFav(ch));
-      if (favs.length === 0) return;
+      const pool = favs.length > 0 ? favs : state.channels;
+      if (pool.length === 0) return;
+
       showUi();
-      let idx = favs.findIndex(c => state.current && c.id === state.current.id);
+      let idx = pool.findIndex(c => state.current && (c.id === state.current.id || favKey(c) === favKey(state.current)));
       if (idx === -1) {
-        window.playChannel(favs[0]);
+        window.playChannel(pool[0]);
         return;
       }
-      idx = (idx + direction + favs.length) % favs.length;
-      window.playChannel(favs[idx]);
+      idx = (idx + direction + pool.length) % pool.length;
+      window.playChannel(pool[idx]);
+    }
+
+    window.zapFavouriteChannel = (direction) => {
+      cycleChannel(direction);
     };
+
+    document.getElementById('btnPrevChannel').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.uiVisible) return;
+      cycleChannel(-1);
+    });
+
+    document.getElementById('btnNextChannel').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.uiVisible) return;
+      cycleChannel(1);
+    });
+
+    document.getElementById('btnPlayPauseCenter').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.uiVisible) return;
+      if (!state.current && state.channels.length > 0) {
+        tryAutoPlayChannel();
+      } else if (hasBridge() && window.AndroidBridge.togglePlayPause) {
+        window.AndroidBridge.togglePlayPause();
+      } else {
+        updatePlayPauseIcons(!state.isPlaying);
+      }
+      startUiHideTimer();
+    });
 
     window.executeVoiceCommand = (cmdText) => {
       const text = (cmdText || '').toLowerCase().trim();
@@ -499,6 +700,14 @@
       if (text.includes('stop') || text.includes('pause') || text.includes('tutup') || text.includes('henti')) {
         if (hasBridge()) window.AndroidBridge.togglePlayPause();
         return "Stream paused.";
+      }
+      if (text.includes('next') || text.includes('seterusnya')) {
+        cycleChannel(1);
+        return "Next channel.";
+      }
+      if (text.includes('prev') || text.includes('sebelumnya')) {
+        cycleChannel(-1);
+        return "Previous channel.";
       }
       if (text.includes('start') || text.includes('resume') || (text.includes('buka') && !text.includes('saluran')) || (text.includes('play') && !text.includes('channel'))) {
         if (state.current) window.playChannel(state.current);
@@ -596,6 +805,7 @@
       state.current = ch;
       state.lastChannelName = favKey(ch);
       state.lastChannelUrl = ch.url || '';
+      updatePlayPauseIcons(true);
       if (broadcastSync) persistSharedState();
 
       document.getElementById('nowPlayingTitle').textContent = ch.name;
@@ -821,18 +1031,19 @@
     function openChannelJumpModal() {
       closeAllModals();
       document.getElementById('totalChannelCount').textContent = state.channels.length;
-      const gs = document.getElementById('groupSelect');
-      gs.innerHTML = '';
-      ['All', ...new Set(state.channels.map(c => c.group))].forEach(g => {
-        const o = document.createElement('option');
-        o.value = g;
-        o.textContent = g;
-        if (g === state.group) o.selected = true;
-        gs.appendChild(o);
-      });
+      document.getElementById('lblGroupSelect').textContent = state.group;
       renderJumpChannelList();
       document.getElementById('modalChannelJump').classList.remove('hidden');
     }
+
+    document.getElementById('btnGroupSelect').addEventListener('click', () => {
+      const groups = ['All', ...new Set(state.channels.map(c => c.group))].map(g => ({ value: g, label: g }));
+      openCustomSelectModal('Select Category Group', groups, state.group, (val, label) => {
+        state.group = val;
+        document.getElementById('lblGroupSelect').textContent = label;
+        renderJumpChannelList();
+      });
+    });
 
     function renderJumpChannelList() {
       const list = document.getElementById('jumpChannelList');
@@ -874,11 +1085,6 @@
         list.appendChild(row);
       });
     }
-
-    document.getElementById('groupSelect').addEventListener('change', (e) => {
-      state.group = e.target.value;
-      renderJumpChannelList();
-    });
 
     function triggerEpgLoad(epgUrl) {
       const clean = (epgUrl || '').trim();
@@ -1024,6 +1230,24 @@
       }
     };
 
+    // Welcome Modal Handlers
+    function closeWelcomeModal() {
+      if (document.getElementById('chkDontShowWelcome').checked) {
+        state.hideWelcomePopup = true;
+        persistSharedState();
+      }
+      document.getElementById('modalWelcome').classList.add('hidden');
+      startUiHideTimer();
+    }
+
+    document.getElementById('btnCloseWelcomeX').addEventListener('click', closeWelcomeModal);
+    document.getElementById('btnDismissWelcome').addEventListener('click', closeWelcomeModal);
+    document.getElementById('btnWelcomeOpenSettings').addEventListener('click', () => {
+      closeWelcomeModal();
+      openSettingsModal();
+    });
+
+    // Side Action Stack Handlers
     document.getElementById('btnOpenSearch').addEventListener('click', (e) => {
       e.stopPropagation();
       if (!state.uiVisible) return;
@@ -1056,24 +1280,87 @@
       openChannelJumpModal();
     });
 
+    function openSettingsModal() {
+      closeAllModals();
+      draftSettings.resPref = String(state.resPref);
+      draftSettings.globalUA = state.globalUA;
+      draftSettings.subPref = state.subPref;
+      draftSettings.audioPref = state.audioPref;
+      draftSettings.themeScheme = state.themeScheme;
+      draftSettings.resizeMode = String(state.resizeMode);
+      draftSettings.hideTimeoutMs = String(state.hideTimeoutMs);
+
+      document.getElementById('m3uUrlInput').value = state.savedM3uUrl || '';
+      document.getElementById('epgUrlInput').value = state.savedEpgUrl || '';
+      document.getElementById('lblResPref').textContent = getOptionLabel(SELECT_OPTIONS.resPref, draftSettings.resPref);
+      document.getElementById('lblUaPreset').textContent = getOptionLabel(SELECT_OPTIONS.uaPreset, draftSettings.globalUA);
+      document.getElementById('lblSubPref').textContent = getOptionLabel(SELECT_OPTIONS.subPref, draftSettings.subPref);
+      document.getElementById('lblAudioPref').textContent = getOptionLabel(SELECT_OPTIONS.audioPref, draftSettings.audioPref);
+      document.getElementById('lblThemeScheme').textContent = getOptionLabel(SELECT_OPTIONS.themeScheme, draftSettings.themeScheme);
+      document.getElementById('lblAspectRatio').textContent = getOptionLabel(SELECT_OPTIONS.aspectRatio, draftSettings.resizeMode);
+      document.getElementById('lblTimeoutPref').textContent = getOptionLabel(SELECT_OPTIONS.timeoutPref, draftSettings.hideTimeoutMs);
+
+      document.getElementById('chkAutoPlayLast').checked = state.autoPlayLast;
+      document.getElementById('chkBgAudioExit').checked = state.bgAudioExit;
+      document.getElementById('fontSizeSlider').value = String(state.fontScale);
+      document.getElementById('fontSizeValueLabel').textContent = state.fontScale + '%';
+      document.getElementById('modalSettings').classList.remove('hidden');
+    }
+
     document.getElementById('btnOpenSettings').addEventListener('click', (e) => {
       e.stopPropagation();
       if (!state.uiVisible) return;
-      closeAllModals();
-      document.getElementById('m3uUrlInput').value = state.savedM3uUrl || '';
-      document.getElementById('epgUrlInput').value = state.savedEpgUrl || '';
-      document.getElementById('uaPresetSelect').value = state.globalUA;
-      document.getElementById('subPrefSelect').value = state.subPref;
-      document.getElementById('audioPrefSelect').value = state.audioPref;
-      document.getElementById('resPrefSelect').value = String(state.resPref);
-      document.getElementById('aspectRatioSelect').value = String(state.resizeMode);
-      document.getElementById('chkAutoPlayLast').checked = state.autoPlayLast;
-      document.getElementById('chkBgAudioExit').checked = state.bgAudioExit;
-      document.getElementById('timeoutPrefSelect').value = String(state.hideTimeoutMs);
-      document.getElementById('fontSizeSlider').value = String(state.fontScale);
-      document.getElementById('fontSizeValueLabel').textContent = state.fontScale + '%';
-      document.getElementById('themeSchemeSelect').value = state.themeScheme;
-      document.getElementById('modalSettings').classList.remove('hidden');
+      openSettingsModal();
+    });
+
+    // Custom Dropdown Button Triggers inside Settings
+    document.getElementById('btnResPref').addEventListener('click', () => {
+      openCustomSelectModal('Channel Resolution', SELECT_OPTIONS.resPref, draftSettings.resPref, (val, label) => {
+        draftSettings.resPref = val;
+        document.getElementById('lblResPref').textContent = label;
+      });
+    });
+
+    document.getElementById('btnUaPreset').addEventListener('click', () => {
+      openCustomSelectModal('User-Agent Spoofing', SELECT_OPTIONS.uaPreset, draftSettings.globalUA, (val, label) => {
+        draftSettings.globalUA = val;
+        document.getElementById('lblUaPreset').textContent = label;
+      });
+    });
+
+    document.getElementById('btnSubPref').addEventListener('click', () => {
+      openCustomSelectModal('Preferred Subtitle', SELECT_OPTIONS.subPref, draftSettings.subPref, (val, label) => {
+        draftSettings.subPref = val;
+        document.getElementById('lblSubPref').textContent = label;
+      });
+    });
+
+    document.getElementById('btnAudioPref').addEventListener('click', () => {
+      openCustomSelectModal('Audio Track Selector', SELECT_OPTIONS.audioPref, draftSettings.audioPref, (val, label) => {
+        draftSettings.audioPref = val;
+        document.getElementById('lblAudioPref').textContent = label;
+      });
+    });
+
+    document.getElementById('btnThemeScheme').addEventListener('click', () => {
+      openCustomSelectModal('Color Scheme', SELECT_OPTIONS.themeScheme, draftSettings.themeScheme, (val, label) => {
+        draftSettings.themeScheme = val;
+        document.getElementById('lblThemeScheme').textContent = label;
+      });
+    });
+
+    document.getElementById('btnAspectRatio').addEventListener('click', () => {
+      openCustomSelectModal('Aspect Ratio Mode', SELECT_OPTIONS.aspectRatio, draftSettings.resizeMode, (val, label) => {
+        draftSettings.resizeMode = val;
+        document.getElementById('lblAspectRatio').textContent = label;
+      });
+    });
+
+    document.getElementById('btnTimeoutPref').addEventListener('click', () => {
+      openCustomSelectModal('Fullscreen Timeout', SELECT_OPTIONS.timeoutPref, draftSettings.hideTimeoutMs, (val, label) => {
+        draftSettings.hideTimeoutMs = val;
+        document.getElementById('lblTimeoutPref').textContent = label;
+      });
     });
 
     document.getElementById('fontSizeSlider').addEventListener('input', (e) => {
@@ -1089,6 +1376,7 @@
       a.href = url;
       a.download = 'iptv_backup_config.json';
       a.click();
+      window.showToast('Backup saved!');
     });
 
     document.getElementById('restoreFileInput').addEventListener('change', (e) => {
@@ -1100,10 +1388,10 @@
           const d = JSON.parse(ev.target.result);
           applyConfigObject(d, false);
           persistSharedState();
-          alert("Configuration restored and synced to Car!");
-          location.reload();
+          window.showToast('Configuration restored and synced!');
+          closeAllModals();
         } catch (err) {
-          alert("Invalid backup JSON file.");
+          window.showToast('Invalid backup JSON file.');
         }
       };
       r.readAsText(f);
@@ -1114,16 +1402,16 @@
     });
 
     document.getElementById('btnSaveAllSettings').addEventListener('click', async () => {
-      const uaVal = document.getElementById('uaPresetSelect').value;
-      const subVal = document.getElementById('subPrefSelect').value;
-      const audVal = document.getElementById('audioPrefSelect').value;
-      const resVal = parseInt(document.getElementById('resPrefSelect').value, 10) || 0;
-      const resizeVal = parseInt(document.getElementById('aspectRatioSelect').value, 10) || 0;
+      const uaVal = draftSettings.globalUA;
+      const subVal = draftSettings.subPref;
+      const audVal = draftSettings.audioPref;
+      const resVal = parseInt(draftSettings.resPref, 10) || 0;
+      const resizeVal = parseInt(draftSettings.resizeMode, 10) || 0;
       const autoPlayVal = document.getElementById('chkAutoPlayLast').checked;
       const bgAudioVal = document.getElementById('chkBgAudioExit').checked;
-      const timeoutVal = parseInt(document.getElementById('timeoutPrefSelect').value, 10) || 5000;
+      const timeoutVal = parseInt(draftSettings.hideTimeoutMs, 10) || 5000;
       const fontVal = parseInt(document.getElementById('fontSizeSlider').value, 10) || 100;
-      const themeVal = document.getElementById('themeSchemeSelect').value;
+      const themeVal = draftSettings.themeScheme;
       const m3uUrl = document.getElementById('m3uUrlInput').value.trim();
       const epgUrl = document.getElementById('epgUrlInput').value.trim();
 
@@ -1148,15 +1436,23 @@
         window.AndroidBridge.setLanguagePreferences(subVal, audVal);
       }
 
+      persistSharedState();
+      closeAllModals();
+      window.showToast('Settings saved & synced!');
+
       if (m3uUrl && (m3uUrl !== prevM3u || state.channels.length <= 2)) {
-        const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(m3uUrl, state.globalUA) : await (await fetch(m3uUrl)).text();
-        window.parseM3UAndLoad(txt, m3uUrl, epgUrl, true);
+        if (hasBridge() && window.AndroidBridge.fetchM3uAsync) {
+          window.showToast('Fetching M3U playlist...');
+          window.AndroidBridge.fetchM3uAsync(m3uUrl, state.globalUA, epgUrl);
+        } else {
+          try {
+            const txt = await (await fetch(m3uUrl)).text();
+            window.parseM3UAndLoad(txt, m3uUrl, epgUrl, true);
+          } catch (e) {}
+        }
       } else if (epgUrl && epgUrl !== prevEpg) {
         triggerEpgLoad(epgUrl);
       }
-
-      persistSharedState();
-      closeAllModals();
     });
 
     document.getElementById('m3uFileInput').addEventListener('change', (e) => {
@@ -1166,14 +1462,16 @@
       const r = new FileReader();
       r.onload = (ev) => {
         window.parseM3UAndLoad(ev.target.result, '', epgU, true);
+        document.getElementById('modalWelcome').classList.add('hidden');
         closeAllModals();
+        window.showToast(`Loaded ${state.channels.length} channels!`);
         tryAutoPlayChannel();
       };
       r.readAsText(f);
     });
 
     document.getElementById('videoOverlayContainer').addEventListener('click', (e) => {
-      if (e.target.id === 'videoOverlayContainer' || e.target.id === 'loading') {
+      if (e.target.id === 'videoOverlayContainer' || e.target.id === 'loading' || e.target.id === 'centerControls') {
         if (state.uiVisible) hideUi();
       }
     });
@@ -1202,10 +1500,24 @@
       }
 
       if (!loadedFromCache && state.savedM3uUrl) {
-        const txt = hasBridge() ? window.AndroidBridge.fetchRemoteText(state.savedM3uUrl, state.globalUA) : await (await fetch(state.savedM3uUrl)).text();
-        window.parseM3UAndLoad(txt, state.savedM3uUrl, state.savedEpgUrl, true);
+        if (hasBridge() && window.AndroidBridge.fetchM3uAsync) {
+          window.AndroidBridge.fetchM3uAsync(state.savedM3uUrl, state.globalUA, state.savedEpgUrl);
+        } else {
+          try {
+            const txt = await (await fetch(state.savedM3uUrl)).text();
+            window.parseM3UAndLoad(txt, state.savedM3uUrl, state.savedEpgUrl, true);
+            loadedFromCache = true;
+          } catch (e) {}
+        }
       } else {
         renderFavoritesDeck();
+      }
+
+      // Show Welcome Popup if no M3U link or cached playlist is present and "Don't show this again" is unchecked
+      const hasCustomM3u = Boolean(state.savedM3uUrl) || loadedFromCache || state.channels.length > 2;
+      if (!hasCustomM3u && !state.hideWelcomePopup) {
+        document.getElementById('chkDontShowWelcome').checked = false;
+        document.getElementById('modalWelcome').classList.remove('hidden');
       }
 
       tryAutoPlayChannel();
