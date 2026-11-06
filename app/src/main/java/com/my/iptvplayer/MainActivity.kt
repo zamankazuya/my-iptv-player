@@ -3,11 +3,14 @@ package com.my.iptvplayer
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognizerIntent
 import android.util.Base64
 import android.util.Log
@@ -15,6 +18,7 @@ import android.util.TypedValue
 import android.util.Xml
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.CookieManager
@@ -51,6 +55,7 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
+import java.io.File
 import java.io.InputStream
 import java.io.PushbackInputStream
 import java.net.CookieHandler
@@ -63,6 +68,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.zip.GZIPInputStream
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -70,14 +76,72 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
 
-@UnstableApi
-class MainActivity : AppCompatActivity() {
+/**
+ * Shared real-time sync hub between the Phone instance (MainActivity)
+ * and the Android Auto Car instance (MainCarActivity).
+ */
+object SharedSyncStore {
+    private const val PREF_NAME = "coolwalk_shared_sync"
+    private const val KEY_CONFIG_JSON = "config_json"
+    private const val PLAYLIST_CACHE_FILE = "cached_playlist.m3u"
 
-    private lateinit var playerView: PlayerView
+    val activeControllers = CopyOnWriteArrayList<IptvSessionController>()
+
+    fun getPrefs(context: Context): SharedPreferences {
+        return context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    }
+
+    fun saveConfigJson(context: Context, jsonStr: String, source: IptvSessionController?) {
+        getPrefs(context).edit().putString(KEY_CONFIG_JSON, jsonStr).apply()
+        notifyOtherInstances(source)
+    }
+
+    fun loadConfigJson(context: Context): String {
+        return getPrefs(context).getString(KEY_CONFIG_JSON, "{}") ?: "{}"
+    }
+
+    fun savePlaylistCache(context: Context, rawM3u: String, source: IptvSessionController?) {
+        try {
+            File(context.applicationContext.filesDir, PLAYLIST_CACHE_FILE).writeText(rawM3u, Charsets.UTF_8)
+            notifyOtherInstances(source)
+        } catch (e: Exception) {
+            Log.e("SyncStore", "Failed saving M3U cache", e)
+        }
+    }
+
+    fun loadPlaylistCache(context: Context): String {
+        return try {
+            val file = File(context.applicationContext.filesDir, PLAYLIST_CACHE_FILE)
+            if (file.exists()) file.readText(Charsets.UTF_8) else ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    fun notifyOtherInstances(source: IptvSessionController?) {
+        val mainHandler = Handler(Looper.getMainLooper())
+        mainHandler.post {
+            for (ctrl in activeControllers) {
+                if (ctrl !== source) {
+                    ctrl.syncFromStore()
+                }
+            }
+        }
+    }
+}
+
+@UnstableApi
+class IptvSessionController(
+    private val context: Context,
+    private val isCarInstance: Boolean,
+    private val onPickFileRequest: ((Intent) -> Boolean)?,
+    private val onVoiceRequest: ((String) -> Unit)?
+) {
+    val rootView: FrameLayout
+    private val playerView: PlayerView
     private var exoPlayer: ExoPlayer? = null
-    private lateinit var webView: WebView
-    private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
-    private var isPickingFile: Boolean = false
+    val webView: WebView
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private data class StreamRequest(
         val url: String,
@@ -94,41 +158,15 @@ class MainActivity : AppCompatActivity() {
     private var preferredSubMode: String = "ms_en"
     private var preferredAudioMode: String = "ms_en"
     private var maxVideoHeight: Int = 0
-    private var bgAudioPlayOnExit: Boolean = false
+    var bgAudioPlayOnExit: Boolean = false
 
-    private val filePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        isPickingFile = false
-        val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
-        fileUploadCallback?.onReceiveValue(uris)
-        fileUploadCallback = null
-    }
-
-    private val speechRecognizerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        isPickingFile = false
-        if (result.resultCode == RESULT_OK) {
-            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val spokenText = matches?.firstOrNull() ?: ""
-            if (spokenText.isNotEmpty()) {
-                val safeText = JSONObject.quote(spokenText)
-                webView.post {
-                    webView.evaluateJavascript("window.executeVoiceCommand && window.executeVoiceCommand($safeText);", null)
-                }
-            }
-        }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
+    init {
         trustAllCertificates()
-        CookieHandler.setDefault(java.net.CookieManager(null, CookiePolicy.ACCEPT_ALL))
+        if (CookieHandler.getDefault() == null) {
+            CookieHandler.setDefault(java.net.CookieManager(null, CookiePolicy.ACCEPT_ALL))
+        }
 
-        val root = FrameLayout(this).apply {
+        rootView = FrameLayout(context).apply {
             setBackgroundColor(Color.BLACK)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -136,7 +174,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        playerView = PlayerView(this).apply {
+        playerView = PlayerView(context).apply {
             useController = false
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setBackgroundColor(Color.BLACK)
@@ -161,7 +199,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView = WebView(this).apply {
+        webView = WebView(context).apply {
             setBackgroundColor(Color.TRANSPARENT)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -169,55 +207,23 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        root.addView(playerView)
-        root.addView(webView)
-        setContentView(root)
+        rootView.addView(playerView)
+        rootView.addView(webView)
 
+        SharedSyncStore.activeControllers.add(this)
         initExoPlayer()
         setupWebView()
-        webView.loadUrl("file:///android_asset/index.html")
+        val modeParam = if (isCarInstance) "car" else "phone"
+        webView.loadUrl("file:///android_asset/index.html?mode=$modeParam")
     }
 
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        Log.d("IPTV_Car", "Configuration changed (Coolwalk split-screen scaled)")
-    }
+    fun getRootView(): View = rootView
 
-    override fun onStop() {
-        super.onStop()
-        if (!isPickingFile && !isChangingConfigurations) {
-            if (!bgAudioPlayOnExit) {
-                exoPlayer?.stop()
-                exoPlayer?.release()
-                exoPlayer = null
-                finishAndRemoveTask()
-            }
-        }
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-            val direction = if (keyCode == KeyEvent.KEYCODE_DPAD_UP) -1 else 1
-            webView.post {
-                webView.evaluateJavascript("window.zapFavouriteChannel && window.zapFavouriteChannel($direction);", null)
-            }
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
-    }
-
-    fun startMalayVoiceRecognition(langCode: String = "ms-MY") {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, langCode)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Sebut nama saluran...")
-        }
-        try {
-            isPickingFile = true
-            speechRecognizerLauncher.launch(intent)
-        } catch (e: Exception) {
-            isPickingFile = false
-            Log.e("VoiceError", "Speech recognizer not available", e)
+    fun syncFromStore() {
+        val cfg = SharedSyncStore.loadConfigJson(context)
+        val quotedCfg = JSONObject.quote(cfg)
+        webView.post {
+            webView.evaluateJavascript("window.onSharedConfigUpdated && window.onSharedConfigUpdated($quotedCfg);", null)
         }
     }
 
@@ -233,7 +239,7 @@ class MainActivity : AppCompatActivity() {
             HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.socketFactory)
             HttpsURLConnection.setDefaultHostnameVerifier { _, _ -> true }
         } catch (e: Exception) {
-            Log.e("SSLTrust", "Failed to trust all certs", e)
+            Log.e("SSLTrust", "Failed to trust certs", e)
         }
     }
 
@@ -242,11 +248,11 @@ class MainActivity : AppCompatActivity() {
             .setBufferDurationsMs(15000, 50000, 1000, 2500)
             .build()
 
-        val renderersFactory = DefaultRenderersFactory(this)
+        val renderersFactory = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
 
-        exoPlayer = ExoPlayer.Builder(this, renderersFactory)
+        exoPlayer = ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
             .build()
             .also { player ->
@@ -290,7 +296,6 @@ class MainActivity : AppCompatActivity() {
                     override fun onPlayerError(error: PlaybackException) {
                         val causeMsg = error.cause?.message ?: error.message ?: "Unknown error"
                         val fullMsg = "${error.errorCodeName}: $causeMsg"
-                        Log.e("IPTV_Native", "ExoPlayer Error: $fullMsg")
 
                         val req = lastRequest
                         val isFormatError = error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
@@ -451,7 +456,7 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        webView.addJavascriptInterface(AndroidBridge(this), "AndroidBridge")
+        webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
         webView.webViewClient = WebViewClient()
         webView.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
@@ -459,20 +464,14 @@ class MainActivity : AppCompatActivity() {
                 filePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
-                fileUploadCallback?.onReceiveValue(null)
-                fileUploadCallback = filePathCallback
-                return try {
-                    val intent = fileChooserParams?.createIntent()
-                    if (intent != null) {
-                        isPickingFile = true
-                        filePickerLauncher.launch(intent)
-                        true
-                    } else false
-                } catch (e: Exception) {
-                    isPickingFile = false
-                    fileUploadCallback = null
-                    false
+                val intent = fileChooserParams?.createIntent() ?: return false
+                MainActivity.pendingFileCallback?.onReceiveValue(null)
+                MainActivity.pendingFileCallback = filePathCallback
+                val launched = onPickFileRequest?.invoke(intent) ?: false
+                if (!launched) {
+                    MainActivity.pendingFileCallback = null
                 }
+                return launched
             }
         }
     }
@@ -513,9 +512,7 @@ class MainActivity : AppCompatActivity() {
         val pb = PushbackInputStream(inputStream, 2)
         val signature = ByteArray(2)
         val len = pb.read(signature)
-        if (len > 0) {
-            pb.unread(signature, 0, len)
-        }
+        if (len > 0) pb.unread(signature, 0, len)
         return if (len == 2 && signature[0] == 0x1f.toByte() && signature[1] == 0x8b.toByte()) {
             GZIPInputStream(pb)
         } else {
@@ -536,7 +533,6 @@ class MainActivity : AppCompatActivity() {
             if (code !in 200..399) return ""
             wrapGzipIfNeeded(conn.inputStream).bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            Log.e("IPTV_Native", "HTTP Fetch error: ${e.message}")
             ""
         }
     }
@@ -714,8 +710,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            runOnUiThread {
-                val player = exoPlayer ?: return@runOnUiThread
+            mainHandler.post {
+                val player = exoPlayer ?: return@post
                 player.stop()
                 player.clearMediaItems()
 
@@ -807,7 +803,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    inner class AndroidBridge(private val context: Context) {
+    fun stopStream() {
+        mainHandler.post {
+            exoPlayer?.stop()
+            exoPlayer?.clearMediaItems()
+        }
+    }
+
+    fun release() {
+        SharedSyncStore.activeControllers.remove(this)
+        mainHandler.post {
+            exoPlayer?.release()
+            exoPlayer = null
+        }
+    }
+
+    inner class AndroidBridge {
+        @JavascriptInterface
+        fun isCarMode(): Boolean = isCarInstance
+
+        @JavascriptInterface
+        fun saveSharedConfig(jsonStr: String) {
+            SharedSyncStore.saveConfigJson(context, jsonStr, this@IptvSessionController)
+        }
+
+        @JavascriptInterface
+        fun loadSharedConfig(): String {
+            return SharedSyncStore.loadConfigJson(context)
+        }
+
+        @JavascriptInterface
+        fun savePlaylistCache(rawM3u: String) {
+            SharedSyncStore.savePlaylistCache(context, rawM3u, this@IptvSessionController)
+        }
+
+        @JavascriptInterface
+        fun loadPlaylistCache(): String {
+            return SharedSyncStore.loadPlaylistCache(context)
+        }
+
         @JavascriptInterface
         fun playNativeStream(
             url: String,
@@ -838,10 +872,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun stopNativeStream() {
+            stopStream()
+        }
+
+        @JavascriptInterface
         fun setLanguagePreferences(subMode: String?, audioMode: String?) {
             preferredSubMode = if (!subMode.isNullOrBlank()) subMode.trim() else "ms_en"
             preferredAudioMode = if (!audioMode.isNullOrBlank()) audioMode.trim() else "ms_en"
-            runOnUiThread {
+            mainHandler.post {
                 exoPlayer?.let { player ->
                     tracksOverrideApplied = false
                     applyPreferredTracks(player, player.currentTracks)
@@ -856,7 +895,7 @@ class MainActivity : AppCompatActivity() {
             val clampedScale = fontScalePercent.coerceIn(80, 140)
             val spSize = 18f * (clampedScale / 100f)
 
-            runOnUiThread {
+            mainHandler.post {
                 playerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, spSize)
                 playerView.resizeMode = when (resizeMode) {
                     1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -878,8 +917,8 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun startVoiceRecognition(lang: String?) {
             val code = if (!lang.isNullOrBlank()) lang.trim() else "ms-MY"
-            runOnUiThread {
-                startMalayVoiceRecognition(code)
+            mainHandler.post {
+                onVoiceRequest?.invoke(code)
             }
         }
 
@@ -894,7 +933,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun togglePlayPause(): Boolean {
             var playing = false
-            runOnUiThread {
+            mainHandler.post {
                 exoPlayer?.let {
                     if (it.isPlaying) it.pause() else it.play()
                     playing = it.isPlaying
@@ -904,73 +943,126 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun setMuted(muted: Boolean) {
-            runOnUiThread { exoPlayer?.volume = if (muted) 0f else 1f }
-        }
-
-        @JavascriptInterface
         fun fetchRemoteText(urlStr: String, userAgent: String?): String {
             val ua = if (!userAgent.isNullOrBlank()) userAgent else "TiviMate/4.7.0 (Linux; Android 13)"
             return fetchUrlTextWithHeaders(urlStr, mapOf("User-Agent" to ua, "Accept" to "*/*"))
         }
     }
+}
+
+@UnstableApi
+class MainActivity : AppCompatActivity() {
+
+    companion object {
+        var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+    }
+
+    private var sessionController: IptvSessionController? = null
+    private var isPickingFile: Boolean = false
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        isPickingFile = false
+        val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+        pendingFileCallback?.onReceiveValue(uris)
+        pendingFileCallback = null
+    }
+
+    private val speechRecognizerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        isPickingFile = false
+        if (result.resultCode == RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = matches?.firstOrNull() ?: ""
+            if (spokenText.isNotEmpty()) {
+                val safeText = JSONObject.quote(spokenText)
+                for (ctrl in SharedSyncStore.activeControllers) {
+                    ctrl.webView.post {
+                        ctrl.webView.evaluateJavascript("window.executeVoiceCommand && window.executeVoiceCommand($safeText);", null)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        val ctrl = IptvSessionController(
+            context = this,
+            isCarInstance = false,
+            onPickFileRequest = { intent ->
+                try {
+                    isPickingFile = true
+                    filePickerLauncher.launch(intent)
+                    true
+                } catch (e: Exception) {
+                    isPickingFile = false
+                    false
+                }
+            },
+            onVoiceRequest = { langCode ->
+                startMalayVoiceRecognition(langCode)
+            }
+        )
+        sessionController = ctrl
+        setContentView(ctrl.getRootView())
+    }
+
+    override fun onResume() {
+        super.onResume()
+        sessionController?.syncFromStore()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        val ctrl = sessionController ?: return
+        val carConnected = SharedSyncStore.activeControllers.any { it !== ctrl }
+        if (!isPickingFile && !isChangingConfigurations && !carConnected) {
+            if (!ctrl.bgAudioPlayOnExit) {
+                ctrl.release()
+                sessionController = null
+                finishAndRemoveTask()
+            }
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            val direction = if (keyCode == KeyEvent.KEYCODE_DPAD_UP) -1 else 1
+            sessionController?.webView?.post {
+                sessionController?.webView?.evaluateJavascript("window.zapFavouriteChannel && window.zapFavouriteChannel($direction);", null)
+            }
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private fun startMalayVoiceRecognition(langCode: String = "ms-MY") {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, langCode)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Sebut nama saluran...")
+        }
+        try {
+            isPickingFile = true
+            speechRecognizerLauncher.launch(intent)
+        } catch (e: Exception) {
+            isPickingFile = false
+        }
+    }
 
     override fun onDestroy() {
+        sessionController?.release()
+        sessionController = null
         super.onDestroy()
-        exoPlayer?.release()
-        exoPlayer = null
     }
 }
 // === END OF MAINACTIVITY.KT ===
-class AutoMediaService : android.service.media.MediaBrowserService() {
-    private var mediaSession: android.media.session.MediaSession? = null
-
-    override fun onCreate() {
-        super.onCreate()
-        mediaSession = android.media.session.MediaSession(this, "CoolwalkIPTVSession").apply {
-            val stateBuilder = android.media.session.PlaybackState.Builder()
-                .setActions(
-                    android.media.session.PlaybackState.ACTION_PLAY or
-                    android.media.session.PlaybackState.ACTION_PAUSE or
-                    android.media.session.PlaybackState.ACTION_PLAY_PAUSE or
-                    android.media.session.PlaybackState.ACTION_STOP
-                )
-                .setState(android.media.session.PlaybackState.STATE_PAUSED, 0L, 1.0f)
-            setPlaybackState(stateBuilder.build())
-            isActive = true
-        }
-        sessionToken = mediaSession?.sessionToken
-    }
-
-    override fun onGetRoot(
-        clientPackageName: String,
-        clientUid: Int,
-        rootHints: android.os.Bundle?
-    ): BrowserRoot {
-        return BrowserRoot("root", null)
-    }
-
-    override fun onLoadChildren(
-        parentId: String,
-        result: Result<MutableList<android.media.browse.MediaBrowser.MediaItem>>
-    ) {
-        val items = mutableListOf<android.media.browse.MediaBrowser.MediaItem>()
-        val desc = android.media.MediaDescription.Builder()
-            .setMediaId("live_stream")
-            .setTitle("Coolwalk IPTV Live")
-            .setSubtitle("Active IPTV Stream")
-            .build()
-        items.add(
-            android.media.browse.MediaBrowser.MediaItem(
-                desc,
-                android.media.browse.MediaBrowser.MediaItem.FLAG_PLAYABLE
-            )
-        )
-        result.sendResult(items)
-    }
-
-    override fun onDestroy() {
-        mediaSession?.release()
-        super.onDestroy()
-    }
-}
